@@ -38,6 +38,65 @@ export const STATUS_COLORS: Record<LeadStatus, string> = {
   abgelehnt: "bg-destructive/15 text-destructive",
 };
 
+export type LeadField =
+  | "ignore" | "name" | "praxis" | "fachgebiet" | "email" | "telefon"
+  | "website" | "adresse" | "plz" | "stadt" | "land" | "gerichtsgutachter"
+  | "notiz" | "status" | "quelle";
+
+export const LEAD_FIELD_LABELS: Record<LeadField, string> = {
+  ignore: "— nicht importieren —",
+  name: "Name",
+  praxis: "Praxis / Klinik",
+  fachgebiet: "Fachgebiet",
+  email: "E-Mail",
+  telefon: "Telefon",
+  website: "Website",
+  adresse: "Adresse",
+  plz: "PLZ",
+  stadt: "Stadt",
+  land: "Land",
+  gerichtsgutachter: "Gerichtsgutachter",
+  notiz: "Notiz",
+  status: "Status",
+  quelle: "Quelle",
+};
+
+const FIELD_ALIASES: Record<LeadField, string[]> = {
+  ignore: [],
+  name: ["name", "vorname", "nachname", "anrede", "kontakt", "ansprechpartner", "arzt", "doctor", "lekarz", "imie", "nazwisko"],
+  praxis: ["praxis", "klinik", "company", "firma", "organisation", "mvz", "zentrum", "klinika", "gabinet", "centrum"],
+  fachgebiet: ["fach", "fachgebiet", "fachrichtung", "specialty", "speciality", "specjalizacja", "spezialisierung"],
+  email: ["email", "e-mail", "mail", "e_mail", "emailadresse"],
+  telefon: ["telefon", "tel", "phone", "mobil", "handy", "telefonnummer", "telefon-nr", "rufnummer", "tel."],
+  website: ["website", "web", "url", "homepage", "internet", "site"],
+  adresse: ["adresse", "address", "anschrift", "strasse", "straße", "street", "ulica"],
+  plz: ["plz", "postleitzahl", "zip", "postal", "postalcode", "kod", "kod-pocztowy", "postcode"],
+  stadt: ["stadt", "ort", "city", "miasto", "town"],
+  land: ["land", "country", "kraj", "staat"],
+  gerichtsgutachter: ["gerichtsgutachter", "gg", "biegly", "bieglysadowy", "sachverstaendiger", "expert"],
+  notiz: ["notiz", "note", "notes", "kommentar", "comment", "bemerkung", "remarks"],
+  status: ["status", "phase", "stage"],
+  quelle: ["quelle", "source", "herkunft", "origin"],
+};
+
+const norm = (s: string) =>
+  s.toLowerCase()
+    .replace(/[äöüß]/g, (c) => ({ ä: "a", ö: "o", ü: "u", ß: "ss" } as Record<string, string>)[c])
+    .replace(/[^a-z0-9]/g, "");
+
+/** Guess which lead field a CSV column header maps to. */
+export function guessField(header: string): LeadField {
+  const h = norm(header);
+  if (!h) return "ignore";
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES) as [LeadField, string[]][]) {
+    if (aliases.some((a) => norm(a) === h)) return field;
+  }
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES) as [LeadField, string[]][]) {
+    if (aliases.some((a) => h.includes(norm(a)) || norm(a).includes(h))) return field;
+  }
+  return "ignore";
+}
+
 export function loadLeads(): Lead[] {
   if (typeof window === "undefined") return [];
   try {
