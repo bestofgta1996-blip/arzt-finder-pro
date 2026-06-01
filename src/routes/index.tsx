@@ -104,7 +104,7 @@ function Home() {
           <TabsContent value="suche"><SearchPanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="einfuegen"><PastePanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="leads">
-            <LeadsList leads={leads} onUpdate={updateLead} onDelete={deleteLead} onDeleteMany={deleteMany} />
+            <LeadsList leads={leads} onAddLeads={addLeads} onUpdate={updateLead} onDelete={deleteLead} onDeleteMany={deleteMany} />
           </TabsContent>
           <TabsContent value="vorlagen"><TemplatesPanel /></TabsContent>
         </Tabs>
