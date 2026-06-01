@@ -161,7 +161,7 @@ export function LeadsList({ leads, onUpdate, onDelete, onDeleteMany }: Props) {
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
             {leads.length === 0
-              ? "Noch keine Leads. Wechsle zu „Suche" oder „Einfügen" um zu starten."
+              ? "Noch keine Leads. Wechsle zu „Suche“ oder „Einfügen“, um zu starten."
               : "Keine Treffer mit diesen Filtern."}
           </CardContent>
         </Card>
