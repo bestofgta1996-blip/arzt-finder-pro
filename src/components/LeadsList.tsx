@@ -1,34 +1,39 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   type Lead, type LeadStatus, type Country,
-  STATUS_LABELS, STATUS_COLORS, leadsToCSV, downloadCSV,
+  STATUS_LABELS, STATUS_COLORS, leadsToCSV, downloadCSV, newId,
 } from "@/lib/leads";
-import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone } from "lucide-react";
+import { CsvImportDialog } from "@/components/CsvImportDialog";
+import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone, Upload, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
   leads: Lead[];
+  onAddLeads: (leads: Lead[]) => void;
   onUpdate: (id: string, patch: Partial<Lead>) => void;
   onDelete: (id: string) => void;
   onDeleteMany: (ids: string[]) => void;
 }
 
-export function LeadsList({ leads, onUpdate, onDelete, onDeleteMany }: Props) {
+export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany }: Props) {
   const [q, setQ] = useState("");
   const [landFilter, setLandFilter] = useState<"alle" | Country>("alle");
   const [statusFilter, setStatusFilter] = useState<"alle" | LeadStatus>("alle");
   const [ggOnly, setGgOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Lead | null>(null);
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
