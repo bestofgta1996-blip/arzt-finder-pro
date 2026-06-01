@@ -38,6 +38,65 @@ export const STATUS_COLORS: Record<LeadStatus, string> = {
   abgelehnt: "bg-destructive/15 text-destructive",
 };
 
+export type LeadField =
+  | "ignore" | "name" | "praxis" | "fachgebiet" | "email" | "telefon"
+  | "website" | "adresse" | "plz" | "stadt" | "land" | "gerichtsgutachter"
+  | "notiz" | "status" | "quelle";
+
+export const LEAD_FIELD_LABELS: Record<LeadField, string> = {
+  ignore: "— nicht importieren —",
+  name: "Name",
+  praxis: "Praxis / Klinik",
+  fachgebiet: "Fachgebiet",
+  email: "E-Mail",
+  telefon: "Telefon",
+  website: "Website",
+  adresse: "Adresse",
+  plz: "PLZ",
+  stadt: "Stadt",
+  land: "Land",
+  gerichtsgutachter: "Gerichtsgutachter",
+  notiz: "Notiz",
+  status: "Status",
+  quelle: "Quelle",
+};
+
+const FIELD_ALIASES: Record<LeadField, string[]> = {
+  ignore: [],
+  name: ["name", "vorname", "nachname", "anrede", "kontakt", "ansprechpartner", "arzt", "doctor", "lekarz", "imie", "nazwisko"],
+  praxis: ["praxis", "klinik", "company", "firma", "organisation", "mvz", "zentrum", "klinika", "gabinet", "centrum"],
+  fachgebiet: ["fach", "fachgebiet", "fachrichtung", "specialty", "speciality", "specjalizacja", "spezialisierung"],
+  email: ["email", "e-mail", "mail", "e_mail", "emailadresse"],
+  telefon: ["telefon", "tel", "phone", "mobil", "handy", "telefonnummer", "telefon-nr", "rufnummer", "tel."],
+  website: ["website", "web", "url", "homepage", "internet", "site"],
+  adresse: ["adresse", "address", "anschrift", "strasse", "straße", "street", "ulica"],
+  plz: ["plz", "postleitzahl", "zip", "postal", "postalcode", "kod", "kod-pocztowy", "postcode"],
+  stadt: ["stadt", "ort", "city", "miasto", "town"],
+  land: ["land", "country", "kraj", "staat"],
+  gerichtsgutachter: ["gerichtsgutachter", "gg", "biegly", "bieglysadowy", "sachverstaendiger", "expert"],
+  notiz: ["notiz", "note", "notes", "kommentar", "comment", "bemerkung", "remarks"],
+  status: ["status", "phase", "stage"],
+  quelle: ["quelle", "source", "herkunft", "origin"],
+};
+
+const norm = (s: string) =>
+  s.toLowerCase()
+    .replace(/[äöüß]/g, (c) => ({ ä: "a", ö: "o", ü: "u", ß: "ss" } as Record<string, string>)[c])
+    .replace(/[^a-z0-9]/g, "");
+
+/** Guess which lead field a CSV column header maps to. */
+export function guessField(header: string): LeadField {
+  const h = norm(header);
+  if (!h) return "ignore";
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES) as [LeadField, string[]][]) {
+    if (aliases.some((a) => norm(a) === h)) return field;
+  }
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES) as [LeadField, string[]][]) {
+    if (aliases.some((a) => h.includes(norm(a)) || norm(a).includes(h))) return field;
+  }
+  return "ignore";
+}
+
 export function loadLeads(): Lead[] {
   if (typeof window === "undefined") return [];
   try {
@@ -191,3 +250,83 @@ export function downloadCSV(filename: string, csv: string) {
 export function newId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+function parseLand(v: string): Country {
+  const s = v.trim().toLowerCase();
+  if (!s) return "DE";
+  if (/^(de|deu|deutschland|germany|niemcy)/.test(s)) return "DE";
+  if (/^(pl|pol|polen|poland|polska)/.test(s)) return "PL";
+  return "Andere";
+}
+
+function parseStatus(v: string): LeadStatus {
+  const s = v.trim().toLowerCase();
+  if (/(angeschrieben|sent|kontaktiert)/.test(s)) return "angeschrieben";
+  if (/(geantwortet|reply|antwort)/.test(s)) return "geantwortet";
+  if (/(termin|meeting|appointment)/.test(s)) return "termin";
+  if (/(abgelehnt|reject|declined|nein)/.test(s)) return "abgelehnt";
+  return "neu";
+}
+
+function parseBool(v: string): boolean {
+  const s = v.trim().toLowerCase();
+  return /^(1|true|ja|yes|y|x|tak)$/.test(s);
+}
+
+/**
+ * Build leads from CSV rows using a column-to-field mapping.
+ * `mapping[colIndex]` says which lead field that column populates.
+ */
+export function buildLeadsFromMapping(
+  rows: string[][],
+  mapping: LeadField[],
+  defaults: { land?: Country; fachgebiet?: string; gerichtsgutachter?: boolean; quelle?: string } = {},
+): { leads: Lead[]; skipped: number; reasons: string[] } {
+  const now = new Date().toISOString();
+  const leads: Lead[] = [];
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  let skipped = 0;
+
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    const fields: Partial<Record<LeadField, string>> = {};
+    for (let c = 0; c < row.length; c++) {
+      const f = mapping[c];
+      if (!f || f === "ignore") continue;
+      const val = (row[c] ?? "").trim();
+      if (val) fields[f] = val;
+    }
+    const email = fields.email?.toLowerCase();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      skipped++;
+      if (reasons.length < 3) reasons.push(`Zeile ${r + 1}: keine gültige E-Mail`);
+      continue;
+    }
+    if (seen.has(email)) { skipped++; continue; }
+    seen.add(email);
+
+    leads.push({
+      id: newId(),
+      name: fields.name || email,
+      praxis: fields.praxis,
+      fachgebiet: fields.fachgebiet || defaults.fachgebiet,
+      email,
+      telefon: fields.telefon,
+      website: fields.website,
+      adresse: fields.adresse,
+      plz: fields.plz,
+      stadt: fields.stadt,
+      land: fields.land ? parseLand(fields.land) : (defaults.land ?? "DE"),
+      gerichtsgutachter: fields.gerichtsgutachter
+        ? parseBool(fields.gerichtsgutachter)
+        : (defaults.gerichtsgutachter ?? false),
+      notiz: fields.notiz,
+      status: fields.status ? parseStatus(fields.status) : "neu",
+      quelle: fields.quelle || defaults.quelle || "CSV-Import",
+      erstelltAm: now,
+    });
+  }
+  return { leads, skipped, reasons };
+}
+
