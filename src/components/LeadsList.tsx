@@ -154,6 +154,12 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
                   </Button>
                 </>
               )}
+              <Button size="sm" variant="outline" onClick={() => setNewOpen(true)}>
+                <Plus className="size-4" /> Neuer Lead
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setCsvOpen(true)}>
+                <Upload className="size-4" /> CSV Import
+              </Button>
               <Button size="sm" onClick={() => exportCSV(filtered)}>
                 <Download className="size-4" /> CSV Export
               </Button>
