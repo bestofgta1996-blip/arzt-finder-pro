@@ -290,6 +290,47 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
   );
 }
 
+function ExportMenu({
+  label, onExport, variant,
+}: {
+  label: string;
+  onExport: (fmt: ExportFormat) => void;
+  variant: "default" | "outline";
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant={variant}>
+          <Download className="size-4" /> {label} <ChevronDown className="size-3 opacity-70" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>Format wählen</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onExport("xlsx")}>
+          <FileSpreadsheet className="size-4" /> Excel (.xlsx)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("csv-semi")}>
+          <FileText className="size-4" /> CSV (Semikolon, DE)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("csv-comma")}>
+          <FileText className="size-4" /> CSV (Komma, intl.)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("tsv")}>
+          <FileText className="size-4" /> TSV (Tab)
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onExport("json")}>
+          <FileJson className="size-4" /> JSON
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("vcf")}>
+          <Contact className="size-4" /> vCard (.vcf)
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function NewLeadDialog({ open, onOpenChange, onCreate }: { open: boolean; onOpenChange: (o: boolean) => void; onCreate: (l: Lead) => void }) {
   const [draft, setDraft] = useState<Partial<Lead>>({ land: "DE", status: "neu", gerichtsgutachter: false });
   useEffect(() => {
