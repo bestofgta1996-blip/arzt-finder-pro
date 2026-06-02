@@ -9,8 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { parseCSV, detectDelimiter } from "@/lib/csv";
 import { readAnyToRows } from "@/lib/exporters";
 import {
-  buildLeadsFromMapping, guessField, LEAD_FIELD_LABELS,
-  type Country, type Lead, type LeadField,
+  buildLeadsFromMapping, guessField, LEAD_FIELD_LABELS, parseBulkText, newId,
+  type Country, type Lead, type LeadField, type LeadStatus,
 } from "@/lib/leads";
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
@@ -49,6 +49,37 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: Props) {
   const handleFile = async (file: File) => {
     setBusy(true);
     try {
+      // vCard: parse blocks directly into leads via shared parser
+      if (/\.vcf$/i.test(file.name)) {
+        const text = await file.text();
+        const parsedLeads = parseBulkText(text);
+        if (parsedLeads.length === 0) {
+          toast.error("Keine Kontakte in der vCard-Datei gefunden");
+          return;
+        }
+        const now = new Date().toISOString();
+        const leads: Lead[] = parsedLeads.map((p) => ({
+          id: newId(),
+          name: p.name || p.email,
+          praxis: p.praxis,
+          email: p.email,
+          telefon: p.telefon,
+          website: p.website,
+          adresse: p.adresse,
+          plz: p.plz,
+          stadt: p.stadt,
+          land: p.land,
+          gerichtsgutachter: false,
+          status: "neu" as LeadStatus,
+          quelle: `vCard: ${file.name}`,
+          erstelltAm: now,
+        }));
+        onImport(leads);
+        toast.success(`${leads.length} Kontakt(e) aus vCard importiert`);
+        onOpenChange(false);
+        return;
+      }
+
       // Try Excel / JSON via universal reader
       const universal = await readAnyToRows(file);
       if (universal) {
