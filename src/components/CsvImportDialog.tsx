@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { parseCSV } from "@/lib/csv";
+import { parseCSV, detectDelimiter } from "@/lib/csv";
+import { readAnyToRows } from "@/lib/exporters";
 import {
   buildLeadsFromMapping, guessField, LEAD_FIELD_LABELS,
   type Country, type Lead, type LeadField,
@@ -48,8 +49,25 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: Props) {
   const handleFile = async (file: File) => {
     setBusy(true);
     try {
+      // Try Excel / JSON via universal reader
+      const universal = await readAnyToRows(file);
+      if (universal) {
+        if (universal.headers.length === 0) { toast.error("Datei ist leer"); return; }
+        setHasHeader(true);
+        setParsed({
+          filename: universal.filename,
+          delimiter: universal.delimiter,
+          headers: universal.headers,
+          rows: universal.rows,
+        });
+        setMapping(universal.headers.map((h) => guessField(h)));
+        return;
+      }
+
+      // CSV / TSV / TXT fallback
       const text = await file.text();
-      const allRows = parseCSV(text);
+      const delim = detectDelimiter(text);
+      const allRows = parseCSV(text, delim);
       if (allRows.length === 0) { toast.error("Datei ist leer"); return; }
 
       const looksLikeHeader = allRows[0].some((c) => /[a-zA-ZäöüÄÖÜ]/.test(c) && !/@/.test(c));
@@ -70,7 +88,7 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: Props) {
         ? headers.map((h) => guessField(h))
         : autoMapByContent(dataRows, colCount);
 
-      setParsed({ filename: file.name, delimiter: ";", headers, rows: dataRows });
+      setParsed({ filename: file.name, delimiter: delim, headers, rows: dataRows });
       setMapping(initialMapping);
     } catch (e) {
       toast.error("Datei konnte nicht gelesen werden: " + (e instanceof Error ? e.message : "Unbekannt"));
@@ -140,9 +158,9 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>CSV importieren</DialogTitle>
+          <DialogTitle>Leads importieren</DialogTitle>
           <DialogDescription>
-            Lade eine CSV/TSV-Datei hoch – die Spalten werden automatisch erkannt und du kannst sie den Lead-Feldern zuordnen.
+            Excel (.xlsx), CSV, TSV, JSON oder vCard – Spalten werden automatisch erkannt und du kannst sie den Lead-Feldern zuordnen.
           </DialogDescription>
         </DialogHeader>
 
@@ -161,11 +179,11 @@ export function CsvImportDialog({ open, onOpenChange, onImport }: Props) {
           >
             <FileSpreadsheet className="size-10 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm font-medium">Datei hierher ziehen</p>
-            <p className="text-xs text-muted-foreground mb-4">unterstützt: .csv, .tsv (Trennzeichen wird erkannt)</p>
+            <p className="text-xs text-muted-foreground mb-4">unterstützt: .xlsx, .xls, .csv, .tsv, .json, .vcf</p>
             <label className="inline-flex">
               <input
                 type="file"
-                accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
+                accept=".csv,.tsv,.txt,.xlsx,.xls,.ods,.json,.vcf,text/csv,text/tab-separated-values,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/vcard"
                 className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
