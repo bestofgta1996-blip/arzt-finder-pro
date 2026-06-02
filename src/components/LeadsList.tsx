@@ -21,6 +21,8 @@ import {
 import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone, Upload, Plus, ChevronDown, FileSpreadsheet, FileJson, FileText, Contact } from "lucide-react";
 import { toast } from "sonner";
 
+type ExportFormat = "csv-semi" | "csv-comma" | "tsv" | "xlsx" | "json" | "vcf";
+
 interface Props {
   leads: Lead[];
   onAddLeads: (leads: Lead[]) => void;
