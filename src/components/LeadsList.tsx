@@ -10,11 +10,18 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   type Lead, type LeadStatus, type Country,
-  STATUS_LABELS, STATUS_COLORS, leadsToCSV, downloadCSV, newId,
+  STATUS_LABELS, STATUS_COLORS, newId,
 } from "@/lib/leads";
+import { exportCSV, exportXLSX, exportJSON, exportVCF } from "@/lib/exporters";
 import { CsvImportDialog } from "@/components/CsvImportDialog";
-import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone, Upload, Plus } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone, Upload, Plus, ChevronDown, FileSpreadsheet, FileJson, FileText, Contact } from "lucide-react";
 import { toast } from "sonner";
+
+type ExportFormat = "csv-semi" | "csv-comma" | "tsv" | "xlsx" | "json" | "vcf";
 
 interface Props {
   leads: Lead[];
@@ -64,14 +71,24 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
     }
   };
 
-  const exportCSV = (which: Lead[]) => {
+  const doExport = (which: Lead[], fmt: ExportFormat) => {
     if (which.length === 0) {
       toast.error("Keine Leads zum Export");
       return;
     }
-    const csv = leadsToCSV(which);
-    downloadCSV(`gutachter-leads_${new Date().toISOString().slice(0, 10)}.csv`, csv);
-    toast.success(`${which.length} Lead(s) exportiert`);
+    try {
+      switch (fmt) {
+        case "csv-semi": exportCSV(which, ";"); break;
+        case "csv-comma": exportCSV(which, ","); break;
+        case "tsv": exportCSV(which, "\t"); break;
+        case "xlsx": exportXLSX(which); break;
+        case "json": exportJSON(which); break;
+        case "vcf": exportVCF(which); break;
+      }
+      toast.success(`${which.length} Lead(s) exportiert`);
+    } catch (e) {
+      toast.error("Export fehlgeschlagen: " + (e instanceof Error ? e.message : "Unbekannt"));
+    }
   };
 
   const counts = useMemo(() => {
@@ -132,16 +149,14 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
                 <Badge key={s} className={STATUS_COLORS[s]}>{STATUS_LABELS[s]}: {counts[s]}</Badge>
               ) : null)}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {selected.size > 0 && (
                 <>
-                  <Button
+                  <ExportMenu
+                    label={`Auswahl (${selected.size})`}
+                    onExport={(fmt) => doExport(filtered.filter((l) => selected.has(l.id)), fmt)}
                     variant="outline"
-                    size="sm"
-                    onClick={() => exportCSV(filtered.filter((l) => selected.has(l.id)))}
-                  >
-                    <Download className="size-4" /> Auswahl ({selected.size})
-                  </Button>
+                  />
                   <Button
                     variant="outline"
                     size="sm"
@@ -158,11 +173,13 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
                 <Plus className="size-4" /> Neuer Lead
               </Button>
               <Button size="sm" variant="outline" onClick={() => setCsvOpen(true)}>
-                <Upload className="size-4" /> CSV Import
+                <Upload className="size-4" /> Import
               </Button>
-              <Button size="sm" onClick={() => exportCSV(filtered)}>
-                <Download className="size-4" /> CSV Export
-              </Button>
+              <ExportMenu
+                label="Export"
+                onExport={(fmt) => doExport(filtered, fmt)}
+                variant="default"
+              />
             </div>
           </div>
         </CardContent>
@@ -270,6 +287,47 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
 
       <NewLeadDialog open={newOpen} onOpenChange={setNewOpen} onCreate={(l) => onAddLeads([l])} />
     </div>
+  );
+}
+
+function ExportMenu({
+  label, onExport, variant,
+}: {
+  label: string;
+  onExport: (fmt: ExportFormat) => void;
+  variant: "default" | "outline";
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant={variant}>
+          <Download className="size-4" /> {label} <ChevronDown className="size-3 opacity-70" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>Format wählen</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onExport("xlsx")}>
+          <FileSpreadsheet className="size-4" /> Excel (.xlsx)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("csv-semi")}>
+          <FileText className="size-4" /> CSV (Semikolon, DE)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("csv-comma")}>
+          <FileText className="size-4" /> CSV (Komma, intl.)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("tsv")}>
+          <FileText className="size-4" /> TSV (Tab)
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onExport("json")}>
+          <FileJson className="size-4" /> JSON
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport("vcf")}>
+          <Contact className="size-4" /> vCard (.vcf)
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
