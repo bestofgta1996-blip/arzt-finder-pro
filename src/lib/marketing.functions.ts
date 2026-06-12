@@ -567,7 +567,8 @@ export const syncOutlookAll = createServerFn({ method: "POST" })
         last_inbox_check_at: runStartedAt,
         last_bounce_check_at: runStartedAt,
         last_full_sync_at: runStartedAt,
-        last_summary: summary as unknown as Record<string, unknown>,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        last_summary: summary as any,
       });
 
     return { ok: true, summary, lastRunAt: runStartedAt };
