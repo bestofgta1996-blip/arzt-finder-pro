@@ -195,9 +195,18 @@ export async function runTedSearch(opts: {
   if (cpvList.length === 0) return [];
 
   const cpvExpr = cpvList.map((c) => `classification-cpv=${c}`).join(" OR ");
+  // TED akzeptiert für "buyer-country" 3-stellige ISO-Codes (DEU, AUT, CHE, FRA …)
+  const ISO2_TO_ISO3: Record<string, string> = {
+    DE: "DEU", AT: "AUT", CH: "CHE", FR: "FRA", IT: "ITA", ES: "ESP",
+    NL: "NLD", BE: "BEL", PL: "POL", CZ: "CZE", DK: "DNK", SE: "SWE",
+    NO: "NOR", FI: "FIN", GB: "GBR", UK: "GBR", IE: "IRL", PT: "PRT",
+    LU: "LUX", HU: "HUN", RO: "ROU", BG: "BGR", GR: "GRC", SI: "SVN",
+    SK: "SVK", HR: "HRV", LT: "LTU", LV: "LVA", EE: "EST",
+  };
   const countryExpr = (opts.laender ?? [])
     .filter((c) => c && c !== "EU")
-    .map((c) => `place-of-performance=${c}`)
+    .map((c) => ISO2_TO_ISO3[c.toUpperCase()] ?? c.toUpperCase())
+    .map((c) => `buyer-country=${c}`)
     .join(" OR ");
   const kwExpr = (opts.schlagworte ?? [])
     .filter(Boolean)
