@@ -24,6 +24,13 @@ const SearchInput = z.object({
   maxQueries: z.number().int().min(1).max(3).optional().default(2),
 });
 
+const DirectoryScanInput = z.object({
+  urls: z.array(z.string().url()).min(1).max(8),
+  suchbegriff: z.string().max(160).optional().default(""),
+  land: z.enum(["DE", "PL"]).default("DE"),
+  maxPagesPerDirectory: z.number().int().min(5).max(60).default(25),
+});
+
 export interface SearchHit {
   title: string;
   url: string;
@@ -31,6 +38,11 @@ export interface SearchHit {
   emails: string[];
   phones: string[];
   zielgruppe: Zielgruppe;
+}
+
+export interface DirectoryEmailHit {
+  email: string;
+  sourceUrl: string;
 }
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -119,6 +131,18 @@ async function fcScrape(apiKey: string, url: string): Promise<string> {
   }
 }
 
+async function fcMap(apiKey: string, url: string, search: string, limit: number): Promise<string[]> {
+  try {
+    const res = await fcFetch("map", apiKey, { url, search, limit, includeSubdomains: false }, 12000);
+    if (!res.ok) return [];
+    const json = (await res.json()) as { links?: string[]; data?: { links?: string[] } | string[] };
+    if (Array.isArray(json.data)) return json.data;
+    return json.data?.links ?? json.links ?? [];
+  } catch {
+    return [];
+  }
+}
+
 async function mapPool<T, R>(items: T[], concurrency: number, fn: (x: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length) as R[];
   let i = 0;
@@ -139,6 +163,12 @@ function extract(text: string) {
     .filter((e) => !/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(e));
   const phones = Array.from(new Set((text.match(PHONE_RE) ?? []).map((p) => p.trim())));
   return { emails, phones };
+}
+
+function normalizeDirectoryUrl(raw: string) {
+  const url = new URL(raw);
+  url.hash = "";
+  return url.toString();
 }
 
 export const searchDoctors = createServerFn({ method: "POST" })
