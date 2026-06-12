@@ -106,40 +106,84 @@ function Home() {
     setLeads((prev) => prev.filter((l) => !s.has(l.id)));
   };
 
+  const current = NAV_ITEMS.find((i) => i.value === tab) ?? NAV_ITEMS[0];
+  const [navOpen, setNavOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-background">
       <Toaster position="top-right" />
 
       <header className="border-b bg-card/60 backdrop-blur sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="size-10 rounded-md bg-primary text-primary-foreground grid place-items-center">
-              <Stethoscope className="size-5" />
-            </div>
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight">IMB Akquise</h1>
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Globe2 className="size-3" /> Marketinglisten pro Land · Dauersuche · Outlook-Abgleich
-              </p>
-            </div>
+        <div className="max-w-7xl mx-auto px-4 md:px-8 py-3 md:py-4 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+          <div className="size-10 shrink-0 rounded-md bg-primary text-primary-foreground grid place-items-center">
+            <Stethoscope className="size-5" />
           </div>
-          <div className="text-xs text-muted-foreground hidden md:block">
+          <div className="min-w-0">
+            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">IMB Akquise</h1>
+            <p className="truncate text-xs text-muted-foreground flex items-center gap-1">
+              <Globe2 className="size-3 shrink-0" />
+              <span className="truncate">Marketinglisten · Dauersuche · Outlook</span>
+            </p>
+          </div>
+
+          {/* Mobile burger */}
+          <Sheet open={navOpen} onOpenChange={setNavOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="md:hidden shrink-0" aria-label="Menü öffnen">
+                <Menu className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-72">
+              <SheetHeader>
+                <SheetTitle>Navigation</SheetTitle>
+              </SheetHeader>
+              <nav className="mt-4 flex flex-col gap-1">
+                {NAV_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  const active = item.value === tab;
+                  return (
+                    <button
+                      key={item.value}
+                      onClick={() => { setTab(item.value); setNavOpen(false); }}
+                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
+                        active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                      }`}
+                    >
+                      <Icon className="size-4 shrink-0" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {item.value === "leads" && leads.length > 0 && (
+                        <span className="text-xs opacity-70">{leads.length}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </SheetContent>
+          </Sheet>
+
+          <div className="hidden md:block text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{leads.length}</span> lokale Lead(s)
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10">
+        {/* Mobile: aktueller Bereich als Label */}
+        <div className="md:hidden mb-4 flex items-center gap-2 text-sm">
+          <current.icon className="size-4 text-primary" />
+          <span className="font-medium">{current.label}</span>
+        </div>
+
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-6">
-            <TabsTrigger value="marketing">Marketinglisten</TabsTrigger>
-            <TabsTrigger value="ausschreibungen">Ausschreibungen</TabsTrigger>
-            <TabsTrigger value="suche">Suche</TabsTrigger>
-            <TabsTrigger value="einfuegen">Einfügen</TabsTrigger>
-            <TabsTrigger value="leads">
-              Lokal {leads.length > 0 && <span className="ml-1 text-xs opacity-70">({leads.length})</span>}
-            </TabsTrigger>
-            <TabsTrigger value="vorlagen">Vorlagen</TabsTrigger>
+          <TabsList className="hidden md:inline-grid md:grid-cols-6">
+            {NAV_ITEMS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+                {item.value === "leads" && leads.length > 0 && (
+                  <span className="ml-1 text-xs opacity-70">({leads.length})</span>
+                )}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           <TabsContent value="marketing"><MarketingPanel /></TabsContent>
