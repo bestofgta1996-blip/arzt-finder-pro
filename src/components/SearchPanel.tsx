@@ -209,7 +209,7 @@ export function SearchPanel({ onAddLeads }: Props) {
               <Checkbox checked={gerichtsgutachter} onCheckedChange={(c) => setGG(c === true)} />
               Schwerpunkt Gerichtsgutachter / biegli sądowi
             </label>
-            <Button onClick={handleSearch} disabled={loading}>
+            <Button type="button" onClick={handleSearch} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
               Suche starten
             </Button>
