@@ -124,7 +124,8 @@ export const updateLead = createServerFn({ method: "POST" })
     if (data.status === "angeschrieben" && data.last_contacted_at === undefined) {
       patch.last_contacted_at = new Date().toISOString();
     }
-    const { error } = await supabaseAdmin.from("leads").update(patch).eq("id", data.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await supabaseAdmin.from("leads").update(patch as any).eq("id", data.id);
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   });
