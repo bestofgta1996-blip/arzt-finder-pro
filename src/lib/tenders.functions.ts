@@ -69,7 +69,7 @@ export const updateTenderStatus = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; status: TenderStatus; notiz?: string }) => d)
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: Record<string, unknown> = { status: data.status };
+    const patch: { status: TenderStatus; notiz?: string } = { status: data.status };
     if (typeof data.notiz === "string") patch.notiz = data.notiz;
     const { error } = await supabaseAdmin.from("tenders").update(patch).eq("id", data.id);
     if (error) throw new Error(error.message);
