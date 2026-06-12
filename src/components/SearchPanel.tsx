@@ -48,6 +48,115 @@ const QUERY_COUNT: Record<"DE" | "PL", Record<Zielgruppe, number>> = {
   PL: { gutachter: 2, fachaerzte: 1, kliniken: 2, versicherungen: 1, anwaelte: 1, reha: 1, berufsgenossenschaft: 1 },
 };
 
+type DirectoryPreset = {
+  label: string;
+  note: string;
+  urls: string[];
+};
+
+const DIRECTORY_PRESETS: Record<"DE" | "PL" | "INT", DirectoryPreset[]> = {
+  DE: [
+    {
+      label: "DE · Offizielle Register",
+      note: "116117 / KBV / gesund.bund / Arzt-Auskunft",
+      urls: [
+        "https://www.116117.de/de/arztsuche.php",
+        "https://gesund.bund.de/arztsuche",
+        "https://www.arzt-auskunft.de/",
+      ],
+    },
+    {
+      label: "DE · Termin- & Bewertungsportale",
+      note: "jameda / Doctolib / Docplanner",
+      urls: [
+        "https://www.jameda.de/",
+        "https://www.doctolib.de/",
+        "https://www.doctolib.de/fachaerzte",
+      ],
+    },
+    {
+      label: "DE · Gutachter / Sachverständige",
+      note: "Gerichtsgutachter / IHK / BDSF",
+      urls: [
+        "https://www.justiz.de/onlinedienste/sachverstaendige/",
+        "https://svv.ihk.de/",
+        "https://www.bdsf.de/sachverstaendige",
+      ],
+    },
+    {
+      label: "DE · Fachgesellschaften & Leitlinien",
+      note: "AWMF / DGOU / DGN / DGPPN",
+      urls: [
+        "https://www.awmf.org/leitlinien",
+        "https://dgou.de/",
+        "https://dgn.org/",
+      ],
+    },
+  ],
+  PL: [
+    {
+      label: "PL · Oficjalne rejestry",
+      note: "NIL / NFZ",
+      urls: [
+        "https://nil.org.pl/rejestry/centralny-rejestr-lekarzy",
+        "https://gsl.nfz.gov.pl/GSL/",
+      ],
+    },
+    {
+      label: "PL · Portale pacjenckie",
+      note: "ZnanyLekarz / Doctolib PL",
+      urls: [
+        "https://www.znanylekarz.pl/",
+        "https://www.znanylekarz.pl/szukaj",
+      ],
+    },
+    {
+      label: "PL · Biegli sądowi",
+      note: "Sądy okręgowe – listy biegłych",
+      urls: [
+        "https://bip.warszawa.so.gov.pl/artykuly/41/biegli-sadowi",
+        "https://bip.krakow.so.gov.pl/artykuly/42/lista-bieglych-sadowych",
+      ],
+    },
+  ],
+  INT: [
+    {
+      label: "UK · GMC / PHIN / Top Doctors",
+      note: "Specialist Register & private consultants",
+      urls: [
+        "https://www.gmc-uk.org/registration-and-licensing/the-medical-register",
+        "https://www.phin.org.uk/",
+        "https://www.topdoctors.co.uk/",
+      ],
+    },
+    {
+      label: "FR · Annuaire Santé",
+      note: "RPPS / Doctolib FR",
+      urls: [
+        "https://annuaire.sante.fr/",
+        "https://www.doctolib.fr/",
+      ],
+    },
+    {
+      label: "CH · doctorfmh / MedReg",
+      note: "Offizielle Schweizer Ärztesuche",
+      urls: [
+        "https://www.doctorfmh.ch/",
+        "https://www.medregom.admin.ch/",
+      ],
+    },
+    {
+      label: "USA · NPI / ABMS / Healthgrades",
+      note: "Board certification & profiles",
+      urls: [
+        "https://npiregistry.cms.hhs.gov/",
+        "https://www.certificationmatters.org/",
+        "https://www.healthgrades.com/",
+      ],
+    },
+  ],
+};
+
 export function SearchPanel({ onAddLeads }: Props) {
   const runSearch = useServerFn(searchDoctors);
   const runDirectoryScan = useServerFn(scanDirectoriesForEmails);
@@ -315,7 +424,48 @@ export function SearchPanel({ onAddLeads }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="directoryUrls">Verzeichnis-URLs</Label>
+            <Label>Empfohlene Verzeichnisse (mit einem Klick einfügen)</Label>
+            {(["DE", "PL", "INT"] as const).map((group) => (
+              <div key={group} className="space-y-1">
+                <p className="text-xs text-muted-foreground font-medium">
+                  {group === "DE" ? "Deutschland" : group === "PL" ? "Polen" : "International"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {DIRECTORY_PRESETS[group].map((preset) => (
+                    <Button
+                      key={preset.label}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDirectoryUrls((prev) => {
+                          const existing = new Set(
+                            prev.split(/[\s,;]+/).map((u) => u.trim()).filter(Boolean),
+                          );
+                          for (const u of preset.urls) existing.add(u);
+                          return Array.from(existing).join("\n");
+                        });
+                        toast.success(`${preset.urls.length} URL(s) eingefügt: ${preset.label}`);
+                      }}
+                      title={preset.note}
+                    >
+                      + {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="directoryUrls">Verzeichnis-URLs</Label>
+              {directoryUrls && (
+                <Button type="button" size="sm" variant="ghost" onClick={() => setDirectoryUrls("")}>
+                  Leeren
+                </Button>
+              )}
+            </div>
             <Textarea
               id="directoryUrls"
               value={directoryUrls}
