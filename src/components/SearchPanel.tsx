@@ -71,7 +71,7 @@ export function SearchPanel({ onAddLeads }: Props) {
       const merged = new Map<string, SearchHit>();
       const totalQueries = selected.reduce((sum, zg) => sum + (land === "PL" && zg !== "gutachter" ? 1 : 2), 0);
 
-      for (let queryOffset = 0; queryOffset < totalQueries; queryOffset += 2) {
+      for (let queryOffset = 0; queryOffset < totalQueries; queryOffset += 1) {
         const res = await runSearch({
           data: {
             fachgebiet,
@@ -79,10 +79,10 @@ export function SearchPanel({ onAddLeads }: Props) {
             land: land === "Andere" ? "DE" : land,
             gerichtsgutachter,
             zielgruppen: selected,
-            limitPerGroup: 5,
-            deepScrape: true,
+            limitPerGroup: 4,
+            deepScrape: false,
             queryOffset,
-            maxQueries: 2,
+            maxQueries: 1,
           },
         });
         if (!res.ok) throw new Error(res.error ?? "Suche fehlgeschlagen");
