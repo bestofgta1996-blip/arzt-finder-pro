@@ -187,29 +187,27 @@ export const searchDoctors = createServerFn({ method: "POST" })
 
       let hits = Array.from(byUrl.values());
 
-      // Deep scrape /kontakt + /impressum for hits without emails (limit to 12 to control costs)
+      // Deep scrape /kontakt + /impressum for hits without emails (cap + concurrency)
       if (data.deepScrape) {
-        const noEmail = hits.filter((h) => h.emails.length === 0).slice(0, 12);
-        await Promise.allSettled(
-          noEmail.map(async (h) => {
-            try {
-              const origin = new URL(h.url).origin;
-              const candidates = data.land === "DE"
-                ? ["/kontakt", "/impressum", "/kontakt/"]
-                : ["/kontakt", "/kontakty"];
-              for (const path of candidates) {
-                const md = await fcScrape(apiKey, origin + path);
-                if (!md) continue;
-                const { emails, phones } = extract(md);
-                h.emails = Array.from(new Set([...h.emails, ...emails]));
-                h.phones = Array.from(new Set([...h.phones, ...phones]));
-                if (h.emails.length > 0) break;
-              }
-            } catch {
-              /* ignore */
+        const noEmail = hits.filter((h) => h.emails.length === 0).slice(0, 8);
+        await mapPool(noEmail, 4, async (h) => {
+          try {
+            const origin = new URL(h.url).origin;
+            const candidates = data.land === "DE"
+              ? ["/kontakt", "/impressum"]
+              : ["/kontakt", "/kontakty"];
+            for (const path of candidates) {
+              const md = await fcScrape(apiKey, origin + path);
+              if (!md) continue;
+              const { emails, phones } = extract(md);
+              h.emails = Array.from(new Set([...h.emails, ...emails]));
+              h.phones = Array.from(new Set([...h.phones, ...phones]));
+              if (h.emails.length > 0) break;
             }
-          })
-        );
+          } catch {
+            /* ignore */
+          }
+        });
       }
 
       // Sort: hits with emails first, then by zielgruppe
