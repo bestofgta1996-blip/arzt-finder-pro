@@ -8,6 +8,7 @@ import { PastePanel } from "@/components/PastePanel";
 import { LeadsList } from "@/components/LeadsList";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MarketingPanel } from "@/components/MarketingPanel";
+import { TendersPanel } from "@/components/TendersPanel";
 import { loadLeads, saveLeads, type Lead } from "@/lib/leads";
 import { upsertLeads, LAENDER } from "@/lib/marketing.functions";
 import { Stethoscope, Globe2 } from "lucide-react";
@@ -119,8 +120,9 @@ function Home() {
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10">
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-5">
+          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-6">
             <TabsTrigger value="marketing">Marketinglisten</TabsTrigger>
+            <TabsTrigger value="ausschreibungen">Ausschreibungen</TabsTrigger>
             <TabsTrigger value="suche">Suche</TabsTrigger>
             <TabsTrigger value="einfuegen">Einfügen</TabsTrigger>
             <TabsTrigger value="leads">
@@ -130,6 +132,7 @@ function Home() {
           </TabsList>
 
           <TabsContent value="marketing"><MarketingPanel /></TabsContent>
+          <TabsContent value="ausschreibungen"><TendersPanel /></TabsContent>
           <TabsContent value="suche"><SearchPanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="einfuegen"><PastePanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="leads">
