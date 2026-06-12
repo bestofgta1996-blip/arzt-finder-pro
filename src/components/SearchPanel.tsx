@@ -305,6 +305,35 @@ export function SearchPanel({ onAddLeads }: Props) {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Verzeichnis-Scan – nur E-Mails</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Trage große Arztverzeichnisse ein. Der Scan folgt passenden Unterseiten und übernimmt ausschließlich gefundene
+            E-Mail-Adressen.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="directoryUrls">Verzeichnis-URLs</Label>
+            <Textarea
+              id="directoryUrls"
+              value={directoryUrls}
+              onChange={(e) => setDirectoryUrls(e.target.value)}
+              placeholder="https://www.beispiel-verzeichnis.de/aerzte&#10;https://www.beispiel-verzeichnis.de/gutachter"
+              className="min-h-28"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <p className="text-xs text-muted-foreground">Maximal 8 Verzeichnisse pro Lauf · bis zu 25 Unterseiten je Verzeichnis.</p>
+            <Button type="button" variant="secondary" onClick={handleDirectoryScan} disabled={directoryLoading || loading}>
+              {directoryLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+              E-Mails aus Verzeichnissen holen
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">
           <CardContent className="pt-6 flex gap-3">
@@ -372,6 +401,36 @@ export function SearchPanel({ onAddLeads }: Props) {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {directoryHits.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold">{directoryHits.length} E-Mail(s) aus Verzeichnissen</h3>
+            <Button size="sm" variant="secondary" onClick={importDirectoryEmails}>
+              Alle E-Mails importieren
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="pt-5 space-y-2">
+              {directoryHits.map((hit) => (
+                <div key={`${hit.email}-${hit.sourceUrl}`} className="flex items-center justify-between gap-3 border-b py-2 last:border-b-0">
+                  <Badge variant="secondary" className="font-mono text-xs break-all whitespace-normal">
+                    {hit.email}
+                  </Badge>
+                  <a
+                    href={hit.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 shrink-0"
+                  >
+                    Quelle <ExternalLink className="size-3" />
+                  </a>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
