@@ -1,29 +1,33 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { SearchPanel } from "@/components/SearchPanel";
 import { PastePanel } from "@/components/PastePanel";
 import { LeadsList } from "@/components/LeadsList";
 import { TemplatesPanel } from "@/components/TemplatesPanel";
+import { MarketingPanel } from "@/components/MarketingPanel";
 import { loadLeads, saveLeads, type Lead } from "@/lib/leads";
+import { upsertLeads, LAENDER } from "@/lib/marketing.functions";
 import { Stethoscope, Globe2 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Gutachter-Akquise – Ärzte & Sachverständige finden (DE/PL)" },
-      { name: "description", content: "Akquise-Werkzeug für medizinische Gutachten: Ärzte und Gerichtsgutachter in Deutschland und Polen finden, Kontakte sammeln, Kampagnen verfolgen und Anschreiben in DE/PL versenden." },
-      { property: "og:title", content: "Gutachter-Akquise – DE/PL" },
-      { property: "og:description", content: "Ärzte und Sachverständige finden, Leads verwalten, Anschreiben in zwei Sprachen." },
+      { title: "IMB Akquise – Ärzte, Gutachter & Marketinglisten (DE/PL/EU)" },
+      { name: "description", content: "Persistente Marketinglisten pro Land mit Dauersuche und Outlook-Abgleich – Ärzte, Gerichtsgutachter und Kliniken in DE, PL und Europa finden und verfolgen." },
+      { property: "og:title", content: "IMB Akquise – Marketinglisten pro Land" },
+      { property: "og:description", content: "Ärzte und Sachverständige finden, in Marketinglisten verwalten, Outlook-Status synchronisieren." },
     ],
   }),
   component: Home,
 });
 
 function Home() {
+  const cloudUpsert = useServerFn(upsertLeads);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [tab, setTab] = useState("suche");
+  const [tab, setTab] = useState("marketing");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -46,12 +50,35 @@ function Home() {
           added++;
         }
       }
-      // After import, switch to leads tab if anything was added
-      if (added > 0) setTimeout(() => setTab("leads"), 600);
+      if (added > 0) setTimeout(() => setTab("marketing"), 600);
       return Array.from(byEmail.values()).sort(
         (a, b) => (a.erstelltAm < b.erstelltAm ? 1 : -1),
       );
     });
+
+    // Push to Cloud marketing list (best-effort, silent)
+    const cloudRows = incoming
+      .filter((l) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email))
+      .map((l) => {
+        const land = (LAENDER as readonly string[]).includes(l.land) ? l.land : "DE";
+        return {
+          land: land as never,
+          email: l.email.toLowerCase(),
+          fachgebiet: l.fachgebiet ?? null,
+          name: l.name ?? null,
+          telefon: l.telefon ?? null,
+          website: l.website ?? null,
+          stadt: l.stadt ?? null,
+          quelle_url: l.website ?? null,
+          quelle_typ: l.quelle ?? null,
+          gerichtsgutachter: l.gerichtsgutachter,
+        };
+      });
+    if (cloudRows.length > 0) {
+      cloudUpsert({ data: { leads: cloudRows } }).catch(() => {
+        /* offline: ignore, lokal bleibt erhalten */
+      });
+    }
   };
 
   const updateLead = (id: string, patch: Partial<Lead>) => {
@@ -78,29 +105,31 @@ function Home() {
               <Stethoscope className="size-5" />
             </div>
             <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight">Gutachter-Akquise</h1>
+              <h1 className="text-base md:text-lg font-semibold leading-tight">IMB Akquise</h1>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Globe2 className="size-3" /> Deutschland &amp; Polen · Ärzte, Praxen, Gerichtsgutachter
+                <Globe2 className="size-3" /> Marketinglisten pro Land · Dauersuche · Outlook-Abgleich
               </p>
             </div>
           </div>
-          <div className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{leads.length}</span> Lead(s) gespeichert
+          <div className="text-xs text-muted-foreground hidden md:block">
+            <span className="font-medium text-foreground">{leads.length}</span> lokale Lead(s)
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10">
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-grid md:grid-cols-5">
+            <TabsTrigger value="marketing">Marketinglisten</TabsTrigger>
             <TabsTrigger value="suche">Suche</TabsTrigger>
             <TabsTrigger value="einfuegen">Einfügen</TabsTrigger>
             <TabsTrigger value="leads">
-              Leads {leads.length > 0 && <span className="ml-1 text-xs opacity-70">({leads.length})</span>}
+              Lokal {leads.length > 0 && <span className="ml-1 text-xs opacity-70">({leads.length})</span>}
             </TabsTrigger>
             <TabsTrigger value="vorlagen">Vorlagen</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="marketing"><MarketingPanel /></TabsContent>
           <TabsContent value="suche"><SearchPanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="einfuegen"><PastePanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="leads">
@@ -111,10 +140,9 @@ function Home() {
 
         <footer className="mt-12 pt-6 border-t text-xs text-muted-foreground space-y-1">
           <p>
-            <strong>Hinweis zum Datenschutz:</strong> Alle Leads werden ausschließlich lokal in deinem
-            Browser gespeichert (kein Server, kein Login). Beim Anschreiben von Ärzten in DE/PL sind
-            DSGVO/RODO und das jeweilige Wettbewerbsrecht zu beachten – Kaltakquise per E-Mail ist nur
-            zulässig, wenn ein berechtigtes Interesse oder eine Einwilligung vorliegt.
+            <strong>Hinweis zum Datenschutz:</strong> Marketinglisten werden in Lovable Cloud gespeichert.
+            Beim Anschreiben von Ärzten in DE/PL/EU sind DSGVO/RODO und das jeweilige Wettbewerbsrecht zu beachten –
+            Kaltakquise per E-Mail ist nur mit berechtigtem Interesse oder Einwilligung zulässig.
           </p>
         </footer>
       </main>
