@@ -56,6 +56,7 @@ export const listTenders = createServerFn({ method: "GET" })
     let q = supabaseAdmin
       .from("tenders")
       .select("*")
+      .order("qualitaet_score", { ascending: false })
       .order("gefunden_am", { ascending: false })
       .limit(500);
     if (data.status && data.status !== "alle") q = q.eq("status", data.status);

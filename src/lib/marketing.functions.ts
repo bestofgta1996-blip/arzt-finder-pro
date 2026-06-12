@@ -41,6 +41,8 @@ export interface DbLead {
   notiz: string | null;
   erstellt_am: string;
   updated_at: string;
+  qualitaet_score: number;
+  qualitaets_merkmale: string[];
 }
 
 export interface DbSearchJob {
@@ -79,7 +81,12 @@ export const listLeads = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => ListLeadsInput.parse(d ?? {}))
   .handler(async ({ data }): Promise<{ ok: boolean; error?: string; leads: DbLead[] }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    let q = supabaseAdmin.from("leads").select("*").order("erstellt_am", { ascending: false }).limit(5000);
+    let q = supabaseAdmin
+      .from("leads")
+      .select("*")
+      .order("qualitaet_score", { ascending: false })
+      .order("erstellt_am", { ascending: false })
+      .limit(5000);
     if (data.land) q = q.eq("land", data.land);
     const { data: rows, error } = await q;
     if (error) return { ok: false, error: error.message, leads: [] };
@@ -90,11 +97,17 @@ export const upsertLeads = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ leads: z.array(LeadInsert).min(1).max(500) }).parse(d))
   .handler(async ({ data }): Promise<{ ok: boolean; error?: string; inserted: number }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const rows = data.leads.map((l) => ({
-      ...l,
-      email: l.email.toLowerCase(),
-      status: "neu" as const,
-    }));
+    const { scoreLead } = await import("@/lib/scoring");
+    const rows = data.leads.map((l) => {
+      const s = scoreLead(l);
+      return {
+        ...l,
+        email: l.email.toLowerCase(),
+        status: "neu" as const,
+        qualitaet_score: s.score,
+        qualitaets_merkmale: s.merkmale,
+      };
+    });
     const { data: inserted, error } = await supabaseAdmin
       .from("leads")
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

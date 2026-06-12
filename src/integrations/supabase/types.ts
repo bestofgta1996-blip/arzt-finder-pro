@@ -26,6 +26,8 @@ export type Database = {
           name: string | null
           notiz: string | null
           outlook_message_id: string | null
+          qualitaet_score: number
+          qualitaets_merkmale: string[]
           quelle_typ: string | null
           quelle_url: string | null
           stadt: string | null
@@ -46,6 +48,8 @@ export type Database = {
           name?: string | null
           notiz?: string | null
           outlook_message_id?: string | null
+          qualitaet_score?: number
+          qualitaets_merkmale?: string[]
           quelle_typ?: string | null
           quelle_url?: string | null
           stadt?: string | null
@@ -66,6 +70,8 @@ export type Database = {
           name?: string | null
           notiz?: string | null
           outlook_message_id?: string | null
+          qualitaet_score?: number
+          qualitaets_merkmale?: string[]
           quelle_typ?: string | null
           quelle_url?: string | null
           stadt?: string | null
@@ -248,6 +254,7 @@ export type Database = {
           land: string | null
           notiz: string | null
           portal_slug: string
+          qualitaet_score: number
           status: string
           titel: string
           updated_at: string
@@ -266,6 +273,7 @@ export type Database = {
           land?: string | null
           notiz?: string | null
           portal_slug: string
+          qualitaet_score?: number
           status?: string
           titel: string
           updated_at?: string
@@ -284,6 +292,7 @@ export type Database = {
           land?: string | null
           notiz?: string | null
           portal_slug?: string
+          qualitaet_score?: number
           status?: string
           titel?: string
           updated_at?: string
