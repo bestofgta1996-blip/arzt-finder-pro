@@ -25,6 +25,7 @@ import {
   updateTenderStatus,
   deleteTender,
   runTendersNow,
+  runManualTenderSearch,
   type DbTender,
   type DbPortal,
   type TenderStatus,
