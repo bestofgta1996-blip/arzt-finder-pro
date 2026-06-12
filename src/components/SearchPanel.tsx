@@ -424,7 +424,48 @@ export function SearchPanel({ onAddLeads }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="directoryUrls">Verzeichnis-URLs</Label>
+            <Label>Empfohlene Verzeichnisse (mit einem Klick einfügen)</Label>
+            {(["DE", "PL", "INT"] as const).map((group) => (
+              <div key={group} className="space-y-1">
+                <p className="text-xs text-muted-foreground font-medium">
+                  {group === "DE" ? "Deutschland" : group === "PL" ? "Polen" : "International"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {DIRECTORY_PRESETS[group].map((preset) => (
+                    <Button
+                      key={preset.label}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDirectoryUrls((prev) => {
+                          const existing = new Set(
+                            prev.split(/[\s,;]+/).map((u) => u.trim()).filter(Boolean),
+                          );
+                          for (const u of preset.urls) existing.add(u);
+                          return Array.from(existing).join("\n");
+                        });
+                        toast.success(`${preset.urls.length} URL(s) eingefügt: ${preset.label}`);
+                      }}
+                      title={preset.note}
+                    >
+                      + {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="directoryUrls">Verzeichnis-URLs</Label>
+              {directoryUrls && (
+                <Button type="button" size="sm" variant="ghost" onClick={() => setDirectoryUrls("")}>
+                  Leeren
+                </Button>
+              )}
+            </div>
             <Textarea
               id="directoryUrls"
               value={directoryUrls}
