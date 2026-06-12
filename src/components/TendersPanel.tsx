@@ -59,6 +59,7 @@ export function TendersPanel() {
   const updateStatusFn = useServerFn(updateTenderStatus);
   const deleteFn = useServerFn(deleteTender);
   const runNow = useServerFn(runTendersNow);
+  const runManual = useServerFn(runManualTenderSearch);
 
   const [tenders, setTenders] = useState<DbTender[]>([]);
   const [portals, setPortals] = useState<DbPortal[]>([]);
@@ -67,6 +68,9 @@ export function TendersPanel() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [manualKeywords, setManualKeywords] = useState("");
+  const [manualLaender, setManualLaender] = useState("DE,AT,CH");
+  const [manualRunning, setManualRunning] = useState(false);
 
   const load = async () => {
     setLoading(true);
