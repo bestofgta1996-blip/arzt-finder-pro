@@ -253,3 +253,41 @@ export const searchDoctors = createServerFn({ method: "POST" })
       };
     }
   });
+
+export const scanDirectoriesForEmails = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => DirectoryScanInput.parse(data))
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string; emails: DirectoryEmailHit[]; scannedUrls: string[] }> => {
+    const apiKey = process.env.FIRECRAWL_API_KEY;
+    if (!apiKey) {
+      return { ok: false, error: "Suche benötigt den Firecrawl-Connector im Lovable-Dashboard.", emails: [], scannedUrls: [] };
+    }
+
+    try {
+      const searchTerms = [data.suchbegriff, data.land === "DE" ? "arzt email kontakt impressum" : "lekarz email kontakt"]
+        .filter(Boolean)
+        .join(" ");
+      const discovered = await mapPool(data.urls, 2, async (url) => {
+        const mapped = await fcMap(apiKey, url, searchTerms, data.maxPagesPerDirectory);
+        return [normalizeDirectoryUrl(url), ...mapped.map(normalizeDirectoryUrl)];
+      });
+      const pages = Array.from(new Set(discovered.flat())).slice(0, data.urls.length * data.maxPagesPerDirectory);
+      const emailByAddress = new Map<string, DirectoryEmailHit>();
+
+      await mapPool(pages, 3, async (url) => {
+        const markdown = await fcScrape(apiKey, url);
+        const { emails } = extract(markdown);
+        for (const email of emails) {
+          if (!emailByAddress.has(email)) emailByAddress.set(email, { email, sourceUrl: url });
+        }
+      });
+
+      return { ok: true, emails: Array.from(emailByAddress.values()), scannedUrls: pages };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Unbekannter Fehler",
+        emails: [],
+        scannedUrls: [],
+      };
+    }
+  });
