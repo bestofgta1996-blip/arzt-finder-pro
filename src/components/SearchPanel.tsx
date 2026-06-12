@@ -36,6 +36,11 @@ const ZG_ORDER: Zielgruppe[] = [
   "berufsgenossenschaft",
 ];
 
+const QUERY_COUNT: Record<"DE" | "PL", Record<Zielgruppe, number>> = {
+  DE: { gutachter: 3, fachaerzte: 2, kliniken: 2, versicherungen: 2, anwaelte: 2, reha: 2, berufsgenossenschaft: 2 },
+  PL: { gutachter: 2, fachaerzte: 1, kliniken: 2, versicherungen: 1, anwaelte: 1, reha: 1, berufsgenossenschaft: 1 },
+};
+
 export function SearchPanel({ onAddLeads }: Props) {
   const runSearch = useServerFn(searchDoctors);
   const [fachgebiet, setFachgebiet] = useState("Orthopädie");
@@ -69,14 +74,15 @@ export function SearchPanel({ onAddLeads }: Props) {
     setHits([]);
     try {
       const merged = new Map<string, SearchHit>();
-      const totalQueries = selected.reduce((sum, zg) => sum + (land === "PL" && zg !== "gutachter" ? 1 : 2), 0);
+      const activeLand = land === "Andere" ? "DE" : land;
+      const totalQueries = selected.reduce((sum, zg) => sum + QUERY_COUNT[activeLand][zg], 0);
 
       for (let queryOffset = 0; queryOffset < totalQueries; queryOffset += 1) {
         const res = await runSearch({
           data: {
             fachgebiet,
             ort,
-            land: land === "Andere" ? "DE" : land,
+            land: activeLand,
             gerichtsgutachter,
             zielgruppen: selected,
             limitPerGroup: 4,
