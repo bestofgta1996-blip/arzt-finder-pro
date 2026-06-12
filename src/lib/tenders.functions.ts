@@ -281,3 +281,42 @@ export const runTendersNow = createServerFn({ method: "POST" }).handler(async ()
   const { runTenderTick } = await import("@/lib/tenders.server");
   return runTenderTick();
 });
+
+/**
+ * Ad-hoc-Suche aus der UI: Nutzer gibt Schlagworte/Länder/CPV ein,
+ * wir rufen TED direkt ab und upserten die Treffer in die DB.
+ */
+export const runManualTenderSearch = createServerFn({ method: "POST" })
+  .inputValidator((d: { schlagworte?: string[]; laender?: string[]; cpv_codes?: string[]; limit?: number }) => d)
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const cpv = data.cpv_codes && data.cpv_codes.length > 0 ? data.cpv_codes : DEFAULT_CPV_CODES;
+    const hits = await runTedSearch({
+      cpvCodes: cpv,
+      laender: data.laender ?? ["DE", "AT", "CH", "EU"],
+      schlagworte: data.schlagworte ?? [],
+      limit: Math.min(data.limit ?? 50, 100),
+    });
+    let neu = 0;
+    if (hits.length > 0) {
+      const rows = hits.map((h) => ({
+        portal_slug: "ted-eu",
+        extern_id: h.extern_id,
+        titel: h.titel.slice(0, 500),
+        auftraggeber: h.auftraggeber,
+        land: h.land,
+        cpv: h.cpv,
+        frist: h.frist,
+        url: h.url,
+        beschreibung: h.beschreibung?.slice(0, 4000) ?? null,
+        status: "neu" as const,
+      }));
+      const { data: inserted } = await supabaseAdmin
+        .from("tenders")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .upsert(rows as any, { onConflict: "portal_slug,extern_id", ignoreDuplicates: true })
+        .select("id");
+      neu = inserted?.length ?? 0;
+    }
+    return { ok: true, treffer: hits.length, neu };
+  });
