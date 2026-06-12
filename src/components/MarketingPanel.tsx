@@ -25,9 +25,10 @@ import {
   type LandCode,
   type LeadStatusDb,
 } from "@/lib/marketing.functions";
+import { scrapeBrak, BRAK_FACHGEBIETE, type BrakFachgebiet } from "@/lib/sources.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send } from "lucide-react";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
