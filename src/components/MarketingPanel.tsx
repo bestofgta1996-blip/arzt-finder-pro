@@ -77,6 +77,13 @@ export function MarketingPanel() {
   const syncOutlook = useServerFn(syncOutlookAll);
   const ensureFolders = useServerFn(ensureOutlookFolders);
   const fetchOutlookState = useServerFn(getOutlookSyncState);
+  const runBrak = useServerFn(scrapeBrak);
+
+  const [brakFach, setBrakFach] = useState<BrakFachgebiet>("Sozialrecht");
+  const [brakOrt, setBrakOrt] = useState("");
+  const [brakLimit, setBrakLimit] = useState(10);
+  const [brakLoading, setBrakLoading] = useState(false);
+  const [brakLast, setBrakLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
 
   const [land, setLand] = useState<LandCode>("DE");
   const [activeFach, setActiveFach] = useState<string>(ALL_FACH);
