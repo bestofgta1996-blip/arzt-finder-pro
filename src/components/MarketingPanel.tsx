@@ -25,9 +25,10 @@ import {
   type LandCode,
   type LeadStatusDb,
 } from "@/lib/marketing.functions";
+import { scrapeBrak, BRAK_FACHGEBIETE, type BrakFachgebiet } from "@/lib/sources.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send } from "lucide-react";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
@@ -76,6 +77,13 @@ export function MarketingPanel() {
   const syncOutlook = useServerFn(syncOutlookAll);
   const ensureFolders = useServerFn(ensureOutlookFolders);
   const fetchOutlookState = useServerFn(getOutlookSyncState);
+  const runBrak = useServerFn(scrapeBrak);
+
+  const [brakFach, setBrakFach] = useState<BrakFachgebiet>("Sozialrecht");
+  const [brakOrt, setBrakOrt] = useState("");
+  const [brakLimit, setBrakLimit] = useState(10);
+  const [brakLoading, setBrakLoading] = useState(false);
+  const [brakLast, setBrakLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
 
   const [land, setLand] = useState<LandCode>("DE");
   const [activeFach, setActiveFach] = useState<string>(ALL_FACH);
@@ -340,6 +348,94 @@ export function MarketingPanel() {
               <span className="inline-flex items-center gap-1"><Folder className="size-3" /> {outlookState.folderCount} Fachgebiet-Ordner gemappt</span>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Quellen: BRAK Anwaltsverzeichnis */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Scale className="size-4" /> Quelle: BRAK Anwaltsverzeichnis
+            <Badge variant="outline" className="text-[10px]">Deutschland</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Sucht im amtlichen Anwaltsverzeichnis und auf Kanzleiwebsites nach
+            <b> Fachanwält:innen</b> mit der gewählten Fachrichtung im angegebenen Ort.
+            Treffer mit E-Mail werden automatisch als Leads (Zielgruppe: Anwälte) angelegt.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="sm:col-span-1">
+              <Label className="text-xs">Fachrichtung</Label>
+              <Select value={brakFach} onValueChange={(v) => setBrakFach(v as BrakFachgebiet)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {BRAK_FACHGEBIETE.map((f) => (
+                    <SelectItem key={f} value={f}>{f}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs">Ort / Stadt</Label>
+              <Input
+                value={brakOrt}
+                onChange={(e) => setBrakOrt(e.target.value)}
+                placeholder="z. B. Berlin, München, Hamburg…"
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <Label className="text-xs">Max. Treffer</Label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={brakLimit}
+                onChange={(e) => setBrakLimit(Math.max(1, Math.min(30, Number(e.target.value) || 10)))}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {brakLast ? (
+                <span>
+                  Letzter Lauf: {brakLast.found} Treffer mit E-Mail · <b>{brakLast.inserted}</b> neu importiert · {brakLast.skipped} Duplikate
+                </span>
+              ) : (
+                <span>Quelle: rechtsanwaltsregister.org &amp; öffentliche Kanzleiwebsites</span>
+              )}
+            </div>
+            <Button
+              onClick={async () => {
+                if (!brakOrt.trim()) {
+                  toast.error("Bitte einen Ort angeben");
+                  return;
+                }
+                setBrakLoading(true);
+                try {
+                  const r = await runBrak({
+                    data: { fachgebiet: brakFach, ort: brakOrt.trim(), limit: brakLimit },
+                  });
+                  if (!r.ok) {
+                    toast.error(r.error ?? "Suche fehlgeschlagen");
+                  } else {
+                    setBrakLast({ found: r.found, inserted: r.inserted, skipped: r.skipped });
+                    toast.success(`${r.inserted} neue Anwaltskontakte importiert (${r.found} gefunden)`);
+                    await reload();
+                  }
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Fehler bei BRAK-Suche");
+                } finally {
+                  setBrakLoading(false);
+                }
+              }}
+              disabled={brakLoading}
+            >
+              {brakLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
+              Suchen &amp; importieren
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
