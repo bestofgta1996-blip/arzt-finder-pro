@@ -14,7 +14,138 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      leads: {
+        Row: {
+          email: string
+          erstellt_am: string
+          fachgebiet: string | null
+          gerichtsgutachter: boolean
+          id: string
+          land: string
+          last_contacted_at: string | null
+          name: string | null
+          notiz: string | null
+          outlook_message_id: string | null
+          quelle_typ: string | null
+          quelle_url: string | null
+          stadt: string | null
+          status: string
+          telefon: string | null
+          updated_at: string
+          website: string | null
+          zielgruppe: string | null
+        }
+        Insert: {
+          email: string
+          erstellt_am?: string
+          fachgebiet?: string | null
+          gerichtsgutachter?: boolean
+          id?: string
+          land: string
+          last_contacted_at?: string | null
+          name?: string | null
+          notiz?: string | null
+          outlook_message_id?: string | null
+          quelle_typ?: string | null
+          quelle_url?: string | null
+          stadt?: string | null
+          status?: string
+          telefon?: string | null
+          updated_at?: string
+          website?: string | null
+          zielgruppe?: string | null
+        }
+        Update: {
+          email?: string
+          erstellt_am?: string
+          fachgebiet?: string | null
+          gerichtsgutachter?: boolean
+          id?: string
+          land?: string
+          last_contacted_at?: string | null
+          name?: string | null
+          notiz?: string | null
+          outlook_message_id?: string | null
+          quelle_typ?: string | null
+          quelle_url?: string | null
+          stadt?: string | null
+          status?: string
+          telefon?: string | null
+          updated_at?: string
+          website?: string | null
+          zielgruppe?: string | null
+        }
+        Relationships: []
+      }
+      search_jobs: {
+        Row: {
+          aktiv: boolean
+          erstellt_am: string
+          fachgebiet: string
+          gerichtsgutachter: boolean
+          id: string
+          land: string
+          last_hit_count: number | null
+          last_run_at: string | null
+          ort: string | null
+          updated_at: string
+          zielgruppen: string[]
+        }
+        Insert: {
+          aktiv?: boolean
+          erstellt_am?: string
+          fachgebiet: string
+          gerichtsgutachter?: boolean
+          id?: string
+          land: string
+          last_hit_count?: number | null
+          last_run_at?: string | null
+          ort?: string | null
+          updated_at?: string
+          zielgruppen?: string[]
+        }
+        Update: {
+          aktiv?: boolean
+          erstellt_am?: string
+          fachgebiet?: string
+          gerichtsgutachter?: boolean
+          id?: string
+          land?: string
+          last_hit_count?: number | null
+          last_run_at?: string | null
+          ort?: string | null
+          updated_at?: string
+          zielgruppen?: string[]
+        }
+        Relationships: []
+      }
+      search_runs: {
+        Row: {
+          errors: string | null
+          finished_at: string | null
+          id: string
+          jobs_run: number
+          new_leads: number
+          started_at: string
+        }
+        Insert: {
+          errors?: string | null
+          finished_at?: string | null
+          id?: string
+          jobs_run?: number
+          new_leads?: number
+          started_at?: string
+        }
+        Update: {
+          errors?: string | null
+          finished_at?: string | null
+          id?: string
+          jobs_run?: number
+          new_leads?: number
+          started_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
