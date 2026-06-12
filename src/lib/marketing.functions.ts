@@ -97,7 +97,8 @@ export const upsertLeads = createServerFn({ method: "POST" })
     }));
     const { data: inserted, error } = await supabaseAdmin
       .from("leads")
-      .upsert(rows, { onConflict: "land,email", ignoreDuplicates: true })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .upsert(rows as any, { onConflict: "land,email", ignoreDuplicates: true })
       .select("id");
     if (error) return { ok: false, error: error.message, inserted: 0 };
     return { ok: true, inserted: inserted?.length ?? 0 };
