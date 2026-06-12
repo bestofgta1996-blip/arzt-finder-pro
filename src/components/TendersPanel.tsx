@@ -171,6 +171,8 @@ export function TendersPanel() {
     } finally {
       setManualRunning(false);
     }
+  };
+
 
   const onTogglePortal = async (p: DbPortal) => {
     await togglePortalFn({ data: { id: p.id, aktiv: !p.aktiv } });
