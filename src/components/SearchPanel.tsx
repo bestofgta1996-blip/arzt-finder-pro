@@ -63,28 +63,43 @@ export function SearchPanel({ onAddLeads }: Props) {
       toast.error("Bitte mindestens eine Zielgruppe wählen");
       return;
     }
+    const selected = Array.from(zielgruppen);
     setLoading(true);
     setError(null);
     setHits([]);
     try {
-      const res = await runSearch({
-        data: {
-          fachgebiet,
-          ort,
-          land: land === "Andere" ? "DE" : land,
-          gerichtsgutachter,
-          zielgruppen: Array.from(zielgruppen),
-          limitPerGroup: 6,
-          deepScrape: true,
-        },
-      });
-      if (!res.ok) {
-        setError(res.error ?? "Suche fehlgeschlagen");
-      } else {
-        setHits(res.hits);
-        if (res.hits.length === 0) toast.info("Keine Treffer – Suche verfeinern");
-        else toast.success(`${res.hits.length} Treffer aus ${zielgruppen.size} Zielgruppen`);
+      const merged = new Map<string, SearchHit>();
+      const totalQueries = selected.reduce((sum, zg) => sum + (land === "PL" && zg !== "gutachter" ? 1 : 2), 0);
+
+      for (let queryOffset = 0; queryOffset < totalQueries; queryOffset += 2) {
+        const res = await runSearch({
+          data: {
+            fachgebiet,
+            ort,
+            land: land === "Andere" ? "DE" : land,
+            gerichtsgutachter,
+            zielgruppen: selected,
+            limitPerGroup: 5,
+            deepScrape: true,
+            queryOffset,
+            maxQueries: 2,
+          },
+        });
+        if (!res.ok) throw new Error(res.error ?? "Suche fehlgeschlagen");
+        for (const hit of res.hits) {
+          const existing = merged.get(hit.url);
+          if (existing) {
+            existing.emails = Array.from(new Set([...existing.emails, ...hit.emails]));
+            existing.phones = Array.from(new Set([...existing.phones, ...hit.phones]));
+          } else {
+            merged.set(hit.url, hit);
+          }
+        }
+        setHits(Array.from(merged.values()));
       }
+      const count = merged.size;
+      if (count === 0) toast.info("Keine Treffer – Suche verfeinern");
+      else toast.success(`${count} Treffer aus ${zielgruppen.size} Zielgruppen`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unbekannter Fehler");
     } finally {
