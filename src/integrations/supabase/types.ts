@@ -146,6 +146,153 @@ export type Database = {
         }
         Relationships: []
       }
+      tender_portals: {
+        Row: {
+          aktiv: boolean
+          anmelde_hinweis: string | null
+          erstellt_am: string
+          homepage: string | null
+          id: string
+          land: string
+          name: string
+          region: string | null
+          slug: string
+          status: string
+          such_url_vorlage: string | null
+          updated_at: string
+          verbindungstyp: string
+          wichtigkeit: number
+        }
+        Insert: {
+          aktiv?: boolean
+          anmelde_hinweis?: string | null
+          erstellt_am?: string
+          homepage?: string | null
+          id?: string
+          land: string
+          name: string
+          region?: string | null
+          slug: string
+          status?: string
+          such_url_vorlage?: string | null
+          updated_at?: string
+          verbindungstyp?: string
+          wichtigkeit?: number
+        }
+        Update: {
+          aktiv?: boolean
+          anmelde_hinweis?: string | null
+          erstellt_am?: string
+          homepage?: string | null
+          id?: string
+          land?: string
+          name?: string
+          region?: string | null
+          slug?: string
+          status?: string
+          such_url_vorlage?: string | null
+          updated_at?: string
+          verbindungstyp?: string
+          wichtigkeit?: number
+        }
+        Relationships: []
+      }
+      tender_search_jobs: {
+        Row: {
+          aktiv: boolean
+          cpv_codes: string[]
+          erstellt_am: string
+          id: string
+          laender: string[]
+          last_hit_count: number | null
+          last_run_at: string | null
+          name: string
+          schlagworte: string[]
+          updated_at: string
+        }
+        Insert: {
+          aktiv?: boolean
+          cpv_codes?: string[]
+          erstellt_am?: string
+          id?: string
+          laender?: string[]
+          last_hit_count?: number | null
+          last_run_at?: string | null
+          name: string
+          schlagworte?: string[]
+          updated_at?: string
+        }
+        Update: {
+          aktiv?: boolean
+          cpv_codes?: string[]
+          erstellt_am?: string
+          id?: string
+          laender?: string[]
+          last_hit_count?: number | null
+          last_run_at?: string | null
+          name?: string
+          schlagworte?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tenders: {
+        Row: {
+          auftraggeber: string | null
+          beschreibung: string | null
+          cpv: string | null
+          extern_id: string
+          frist: string | null
+          gefunden_am: string
+          id: string
+          land: string | null
+          notiz: string | null
+          portal_slug: string
+          status: string
+          titel: string
+          updated_at: string
+          url: string | null
+          waehrung: string | null
+          wert: number | null
+        }
+        Insert: {
+          auftraggeber?: string | null
+          beschreibung?: string | null
+          cpv?: string | null
+          extern_id: string
+          frist?: string | null
+          gefunden_am?: string
+          id?: string
+          land?: string | null
+          notiz?: string | null
+          portal_slug: string
+          status?: string
+          titel: string
+          updated_at?: string
+          url?: string | null
+          waehrung?: string | null
+          wert?: number | null
+        }
+        Update: {
+          auftraggeber?: string | null
+          beschreibung?: string | null
+          cpv?: string | null
+          extern_id?: string
+          frist?: string | null
+          gefunden_am?: string
+          id?: string
+          land?: string | null
+          notiz?: string | null
+          portal_slug?: string
+          status?: string
+          titel?: string
+          updated_at?: string
+          url?: string | null
+          waehrung?: string | null
+          wert?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -1,63 +1,83 @@
 ## Ziel
 
-Pro Land (DE, PL, UK, FR, IT, ES) eine eigene Marketingliste mit allen Fachrichtungen + allen gefundenen Ärzten/Gutachtern mit E-Mail. Die Suche läuft stündlich automatisch im Hintergrund (Cron). Pro Lead wird angezeigt, ob er bereits per Outlook angeschrieben wurde.
+Neuer Tab **„Ausschreibungen"** in der IMB-App. Du siehst aktuelle öffentliche Ausschreibungen (medizinische Gutachten, Sachverständigenleistungen, ärztliche Dienstleistungen) aus den wichtigsten Portalen – europaweit, deutschlandweit, international – sortiert nach Wichtigkeit. Portale werden Schritt für Schritt angebunden; pro Portal siehst du klar, ob es „live", „nur Suchlink" oder „noch nicht verbunden" ist.
 
-## 1. Datenbank (Lovable Cloud)
+## 1. Portal-Priorisierung (nach Wichtigkeit für IMB)
 
-Neue Tabellen:
+**Stufe 1 – Pflicht (EU-weit, offizielle Quellen, offene APIs):**
+1. **TED – Tenders Electronic Daily** (EU-Amtsblatt, alle EU-Ausschreibungen über Schwellenwert) – offizielle JSON-API verfügbar
+2. **eForms-DE / Bund.de Datenservice öffentlicher Einkauf** (Deutschland, offen)
+3. **Vergabe24 / Deutsches Vergabeportal (DTVP)** – Suchlink + RSS
 
-- **leads** – persistent, alle Treffer aller Länder
-  - `id`, `land`, `fachgebiet`, `zielgruppe`, `name`, `email` (unique pro land+email), `telefon`, `website`, `stadt`, `quelle_url`, `gerichtsgutachter`, `status` (`neu` / `angeschrieben` / `geantwortet` / `kunde` / `nicht_relevant`), `last_contacted_at`, `outlook_message_id`, `notiz`, `erstellt_am`, `updated_at`
-- **search_jobs** – was die Hintergrundsuche stündlich durchläuft
-  - `id`, `land`, `fachgebiet`, `zielgruppen[]`, `ort`, `gerichtsgutachter`, `aktiv`, `last_run_at`, `last_hit_count`
-- **search_runs** – Log: wann, wie viele neue Treffer, Fehler
+**Stufe 2 – Wichtige deutschsprachige Portale:**
+4. **Service.bund.de** (Bundesverwaltung)
+5. **evergabe-online.de** (Beschaffungsamt BMI)
+6. **subreport ELViS**
+7. **Vergabemarktplatz NRW / Bayern / BW** (Landesportale)
+8. **Vergabeportal Österreich (ANKÖ)** + **simap.ch** (Schweiz)
 
-RLS: nur `authenticated`. GRANTs gemäß Konvention.
+**Stufe 3 – International / spezialisiert:**
+9. **UN Global Marketplace (UNGM)** – WHO, UNICEF, UNDP
+10. **World Bank Procurement**
+11. **NHS Supply Chain / Contracts Finder (UK)**
+12. **BOAMP (FR)**, **PLACE (FR)**, **Portale Acquisti (IT)**
 
-## 2. Server-Logik
+Jedes Portal bekommt einen Eintrag mit: Name, Land/Region, Wichtigkeit (1–3), Verbindungstyp (`api` / `rss` / `suchlink` / `manuell`), Status (`live` / `geplant` / `manuell`), Such-URL-Vorlage, Hinweise zur Anmeldung.
 
-Neue Server-Funktionen in `src/lib/leads.functions.ts`:
+## 2. Was sofort live geht (ohne weitere Logins)
 
-- `listLeads({ land })` – liefert alle Leads des Landes, sortiert nach Fachgebiet
-- `upsertLeads(rows[])` – Dedupe per `land + email`
-- `updateLeadStatus({ id, status, notiz })`
-- `listSearchJobs()`, `upsertSearchJob(...)`, `deleteSearchJob(id)`
-- `syncOutlookContacted()` – matcht Outlook-Sent-Mails gegen Leads (no-op solange Outlook nicht verbunden)
-
-Neue Public-Route `src/routes/api/public/hooks/search-tick.ts`:
-- wird stündlich von pg_cron aufgerufen
-- holt aktive `search_jobs`, ruft die bestehende `searchDoctors`-Pipeline auf, schreibt neue E-Mails als Leads in die DB
-
-pg_cron-Eintrag: `0 * * * *` ruft die Hook-URL mit `apikey`-Header auf.
+- **TED-API**: vollwertige Suche nach CPV-Codes (medizinische Dienstleistungen: 85100000, Sachverständigengutachten: 71319000/71621000, Übersetzung medizinischer Befunde etc.) – Ergebnisse direkt in der App
+- **Service.bund.de / Bund.de**: offene Suche (Suchlink-Modus mit vorbereiteten Queries)
+- **Alle übrigen Portale**: vorkonfigurierte **Tiefen-Suchlinks** („Auf Portal öffnen"), damit du sofort den richtigen Trefferbereich erreichst, auch bevor ein Login eingerichtet ist
 
 ## 3. UI
 
-- Neuer Tab/Bereich „Marketinglisten" mit Unter-Tabs DE / PL / UK / FR / IT / ES
-- Pro Land: Tabelle der Leads, gruppiert nach Fachgebiet, mit Spalten E-Mail · Status · Angeschrieben am · Quelle · Aktion
-- Status-Badge: grün „angeschrieben" (aus Outlook-Sync oder manuell), grau „neu"
-- Such-Panel bekommt Knopf „Als Dauersuche speichern" → schreibt einen `search_jobs`-Eintrag
-- Verzeichnis-Scan-Treffer landen direkt in der Marketingliste des aktuellen Landes
-- Manueller Toggle „Angeschrieben markieren" pro Lead (solange Outlook nicht verbunden)
-- Hinweis-Banner: „Outlook verbinden für Auto-Abgleich" mit Connect-Button
+Neuer Tab **„Ausschreibungen"** mit zwei Unter-Bereichen:
 
-## 4. Outlook-Anbindung (vorbereitet)
+**a) Aktuelle Treffer** (Default-Ansicht)
+- Filter: Land, CPV-Bereich, Zeitraum, Schwellenwert, Sprache
+- Liste: Titel · Auftraggeber · Land · Frist · Wert · Quelle-Badge · Aktionen (Detail · auf Portal öffnen · in Watchlist)
+- Status-Badge pro Treffer: „neu" / „beobachtet" / „beworben" / „verworfen"
+- Realtime-Update wenn der Hintergrund-Cron neue Treffer einträgt
 
-- Code-Pfad `syncOutlookContacted` ist gebaut und prüft `process.env.MICROSOFT_OUTLOOK_API_KEY`
-- Solange nicht verbunden: gibt freundlich Bescheid, kein Crash
-- Sobald du den Outlook-Connector freigibst, läuft der Sync automatisch (matcht Empfänger-E-Mail gegen Leads, setzt `status=angeschrieben` + `last_contacted_at` + `outlook_message_id`)
+**b) Portale & Verbindungen**
+- Tabelle aller Portale, gruppiert nach Stufe 1/2/3
+- Pro Portal: Status-Badge, „Konto verbinden"-Button (öffnet portalspezifische Anleitung), Toggle „in Dauer-Suche aufnehmen"
+- Hinweis-Karte: „Für vollautomatischen Login bei [Portal X] brauchen wir folgende Daten…" – wir fragen erst, wenn du das Portal aktivierst
 
-## 5. Migration der bestehenden lokalen Leads
+## 4. Datenbank (Lovable Cloud)
 
-Der bestehende lokale Lead-Store (`localStorage`) bekommt einen Button „In Cloud-Marketingliste übernehmen", der vorhandene Leads in die DB hochlädt. Danach ist die Cloud die führende Quelle.
+Neue Tabellen:
+- **tender_portals** – Stammdaten der Portale (Wichtigkeit, Verbindungstyp, Such-URL-Vorlage, Status). Wird per Migration mit den o.g. Portalen geseedet.
+- **tenders** – gefundene Ausschreibungen (`portal_id`, `extern_id`, `titel`, `auftraggeber`, `land`, `cpv`, `frist`, `wert`, `waehrung`, `url`, `beschreibung`, `status` `neu`/`beobachtet`/`beworben`/`verworfen`, `notiz`, `gefunden_am`). Unique pro `portal_id + extern_id`.
+- **tender_search_jobs** – gespeicherte Suchen (CPV-Set, Länder, Schlagworte, aktiv-Flag) für die Dauersuche.
 
-## Was du nach Genehmigung tun musst
+RLS + GRANTs gemäß Konvention. Realtime auf `tenders`.
 
-1. Plan freigeben
-2. Anschließend Outlook-Connector verbinden, damit der Auto-Abgleich aktiv wird (kann auch später passieren)
+## 5. Server-Logik
+
+- `src/lib/tenders.functions.ts`: `listTenders`, `updateTenderStatus`, `listPortals`, `togglePortal`, `listSearchJobs`, `upsertSearchJob`, `runTedSearch` (TED-API)
+- `src/routes/api/public/hooks/tenders-tick.ts`: stündlicher Cron, ruft TED-API + RSS-Quellen ab, schreibt neue Treffer in `tenders`
+- pg_cron: `15 * * * *` (versetzt zum bestehenden Ärzte-Cron um Last zu verteilen)
+
+## 6. Schrittweise Portal-Anbindung
+
+Wenn du in der UI „Konto verbinden" für ein Stufe-2/3-Portal anklickst:
+1. Wir zeigen dir, welche Zugangsdaten/API-Keys das Portal anbietet
+2. Du legst das Konto beim Portal an (Anleitung in der App)
+3. Du gibst uns den Key/Login → wir speichern als Secret
+4. Sobald Secret vorhanden, springt das Portal in der Liste auf „live" und wird vom Cron mitgezogen
+
+Solange ein Portal nicht verbunden ist: bleibt im **Suchlink-Modus** – du kommst mit einem Klick zur richtigen Trefferseite, ohne dass Treffer importiert werden.
+
+## 7. Was du nach Freigabe tust
+
+1. **Plan freigeben** – ich baue Stufe 1 (TED live + alle Portale als Suchlink + UI + Cron)
+2. Optional gleich danach: einzelne Stufe-2-Portale freischalten, ich frage dann gezielt nach den Zugangsdaten pro Portal
 
 ## Technische Notizen
 
-- Cron-Auth via `apikey`-Header (Supabase Anon Key) – kein zusätzliches Secret
-- Firecrawl bleibt bestehen, wird nur jetzt serverseitig vom Cron-Hook getriggert
-- Bestehende `searchDoctors` / `scanDirectoriesForEmails` werden wiederverwendet
-- Realtime auf `leads` aktivieren, damit die Liste live aktualisiert wird, wenn der Cron neue Treffer einträgt
+- TED-API: `https://api.ted.europa.eu/v3/notices/search`, kein API-Key nötig, CPV-Filter via Expert-Query
+- CPV-Vorauswahl medizinisch: 85100000 (Gesundheitsdienste), 85120000 (ärztliche Praxis), 85140000 (sonstige Gesundheitsdienste), 71319000 (Sachverständigendienste), 79419000 (Beratungsdienste im Bewertungsbereich), 79530000 (Übersetzung)
+- Cron-Auth wie bisher per `apikey`-Header (Anon Key)
+- Keine PII in `/api/public/*`-Endpunkten
