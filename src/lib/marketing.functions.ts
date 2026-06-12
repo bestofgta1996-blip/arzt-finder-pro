@@ -17,10 +17,21 @@ export const LEAD_STATUS = [
   "neu",
   "angeschrieben",
   "geantwortet",
+  "bounce",
   "kunde",
   "nicht_relevant",
 ] as const;
 export type LeadStatusDb = (typeof LEAD_STATUS)[number];
+
+// Hierarchie für Auto-Updates: höherer Status wird beim Outlook-Sync nicht zurückgestuft
+const STATUS_RANK: Record<LeadStatusDb, number> = {
+  neu: 0,
+  angeschrieben: 1,
+  bounce: 2,
+  geantwortet: 3,
+  kunde: 4,
+  nicht_relevant: 5,
+};
 
 export interface DbLead {
   id: string;
@@ -37,7 +48,10 @@ export interface DbLead {
   gerichtsgutachter: boolean;
   status: LeadStatusDb;
   last_contacted_at: string | null;
+  last_replied_at: string | null;
+  bounced_at: string | null;
   outlook_message_id: string | null;
+  outlook_folder_id: string | null;
   notiz: string | null;
   erstellt_am: string;
   updated_at: string;
