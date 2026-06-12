@@ -91,7 +91,8 @@ async function runTick(): Promise<Response> {
       if (rows.length > 0) {
         const { data: inserted } = await supabaseAdmin
           .from("leads")
-          .upsert(rows, { onConflict: "land,email", ignoreDuplicates: true })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .upsert(rows as any, { onConflict: "land,email", ignoreDuplicates: true })
           .select("id");
         totalNew += inserted?.length ?? 0;
       }
