@@ -386,6 +386,19 @@ export function MarketingPanel() {
                         <div key={lead.id} className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 hover:bg-accent/40">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                className={
+                                  "text-[10px] border " +
+                                  ((lead.qualitaet_score ?? 0) >= 60
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                    : (lead.qualitaet_score ?? 0) >= 30
+                                    ? "bg-amber-100 text-amber-800 border-amber-200"
+                                    : "bg-slate-100 text-slate-700 border-slate-200")
+                                }
+                                title={lead.qualitaets_merkmale?.join(" · ") || "Keine Pluspunkte erkannt"}
+                              >
+                                ★ {lead.qualitaet_score ?? 0}
+                              </Badge>
                               <span className="font-mono text-xs break-all">{lead.email}</span>
                               <Badge variant={STATUS_VARIANT[lead.status]} className="text-[10px]">
                                 {STATUS_LABEL[lead.status]}
@@ -399,6 +412,11 @@ export function MarketingPanel() {
                             </div>
                             <div className="text-xs text-muted-foreground truncate">
                               {lead.name && <span>{lead.name}</span>}
+                              {lead.qualitaets_merkmale && lead.qualitaets_merkmale.length > 0 && (
+                                <span className="ml-1 text-[10px] opacity-75">
+                                  {lead.qualitaets_merkmale.slice(0, 3).join(" · ")}
+                                </span>
+                              )}
                               {lead.zielgruppe && <span> · {ZIELGRUPPEN_LABEL[lead.zielgruppe] ?? lead.zielgruppe}</span>}
                               {lead.stadt && <span> · {lead.stadt}</span>}
                               {lead.quelle_url && (

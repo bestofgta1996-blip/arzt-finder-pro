@@ -41,6 +41,8 @@ export interface DbLead {
   notiz: string | null;
   erstellt_am: string;
   updated_at: string;
+  qualitaet_score: number;
+  qualitaets_merkmale: string[];
 }
 
 export interface DbSearchJob {
