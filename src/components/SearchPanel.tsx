@@ -36,6 +36,11 @@ const ZG_ORDER: Zielgruppe[] = [
   "berufsgenossenschaft",
 ];
 
+const QUERY_COUNT: Record<"DE" | "PL", Record<Zielgruppe, number>> = {
+  DE: { gutachter: 3, fachaerzte: 2, kliniken: 2, versicherungen: 2, anwaelte: 2, reha: 2, berufsgenossenschaft: 2 },
+  PL: { gutachter: 2, fachaerzte: 1, kliniken: 2, versicherungen: 1, anwaelte: 1, reha: 1, berufsgenossenschaft: 1 },
+};
+
 export function SearchPanel({ onAddLeads }: Props) {
   const runSearch = useServerFn(searchDoctors);
   const [fachgebiet, setFachgebiet] = useState("Orthopädie");
@@ -63,28 +68,44 @@ export function SearchPanel({ onAddLeads }: Props) {
       toast.error("Bitte mindestens eine Zielgruppe wählen");
       return;
     }
+    const selected = Array.from(zielgruppen);
     setLoading(true);
     setError(null);
     setHits([]);
     try {
-      const res = await runSearch({
-        data: {
-          fachgebiet,
-          ort,
-          land: land === "Andere" ? "DE" : land,
-          gerichtsgutachter,
-          zielgruppen: Array.from(zielgruppen),
-          limitPerGroup: 6,
-          deepScrape: true,
-        },
-      });
-      if (!res.ok) {
-        setError(res.error ?? "Suche fehlgeschlagen");
-      } else {
-        setHits(res.hits);
-        if (res.hits.length === 0) toast.info("Keine Treffer – Suche verfeinern");
-        else toast.success(`${res.hits.length} Treffer aus ${zielgruppen.size} Zielgruppen`);
+      const merged = new Map<string, SearchHit>();
+      const activeLand = land === "Andere" ? "DE" : land;
+      const totalQueries = selected.reduce((sum, zg) => sum + QUERY_COUNT[activeLand][zg], 0);
+
+      for (let queryOffset = 0; queryOffset < totalQueries; queryOffset += 1) {
+        const res = await runSearch({
+          data: {
+            fachgebiet,
+            ort,
+            land: activeLand,
+            gerichtsgutachter,
+            zielgruppen: selected,
+            limitPerGroup: 4,
+            deepScrape: false,
+            queryOffset,
+            maxQueries: 1,
+          },
+        });
+        if (!res.ok) throw new Error(res.error ?? "Suche fehlgeschlagen");
+        for (const hit of res.hits) {
+          const existing = merged.get(hit.url);
+          if (existing) {
+            existing.emails = Array.from(new Set([...existing.emails, ...hit.emails]));
+            existing.phones = Array.from(new Set([...existing.phones, ...hit.phones]));
+          } else {
+            merged.set(hit.url, hit);
+          }
+        }
+        setHits(Array.from(merged.values()));
       }
+      const count = merged.size;
+      if (count === 0) toast.info("Keine Treffer – Suche verfeinern");
+      else toast.success(`${count} Treffer aus ${zielgruppen.size} Zielgruppen`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unbekannter Fehler");
     } finally {
@@ -136,8 +157,8 @@ export function SearchPanel({ onAddLeads }: Props) {
         <CardHeader>
           <CardTitle className="text-lg">Online-Suche – alle Stakeholder</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Durchsucht parallel Praxen, Kliniken, Gutachter, Versicherungen, Anwälte & Reha. Kontaktseiten werden
-            automatisch nachgescrapt.
+            Durchsucht Praxen, Kliniken, Gutachter, Versicherungen, Anwälte & Reha in kleinen stabilen Suchläufen.
+            Treffer mit sichtbaren Kontaktdaten können direkt übernommen werden.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -194,7 +215,7 @@ export function SearchPanel({ onAddLeads }: Props) {
               <Checkbox checked={gerichtsgutachter} onCheckedChange={(c) => setGG(c === true)} />
               Schwerpunkt Gerichtsgutachter / biegli sądowi
             </label>
-            <Button onClick={handleSearch} disabled={loading}>
+            <Button type="button" onClick={handleSearch} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
               Suche starten
             </Button>

@@ -20,6 +20,8 @@ const SearchInput = z.object({
   gerichtsgutachter: z.boolean().default(false),
   limitPerGroup: z.number().int().min(1).max(15).default(8),
   deepScrape: z.boolean().default(true),
+  queryOffset: z.number().int().min(0).optional().default(0),
+  maxQueries: z.number().int().min(1).max(3).optional().default(2),
 });
 
 export interface SearchHit {
@@ -143,20 +145,20 @@ export const searchDoctors = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => SearchInput.parse(data))
   .handler(async ({ data }): Promise<{ ok: boolean; error?: string; hits: SearchHit[]; queries: string[] }> => {
     const apiKey = process.env.FIRECRAWL_API_KEY;
-    const queries = buildQueries(data);
+    const allQueries = buildQueries(data);
+    const queries = allQueries.slice(data.queryOffset, data.queryOffset + data.maxQueries);
     if (!apiKey) {
       return {
         ok: false,
         error: "Suche benötigt den Firecrawl-Connector im Lovable-Dashboard.",
         hits: [],
-        queries: queries.map((q) => q.q),
+          queries: allQueries.map((q) => q.q),
       };
     }
 
     try {
-      // Run all queries in parallel
       const results = await Promise.allSettled(
-        queries.map((q) => fcSearch(apiKey, q.q, data.limitPerGroup, data.land).then((r) => ({ zg: q.zg, r })))
+        queries.map((q) => fcSearch(apiKey, q.q, Math.min(data.limitPerGroup, 5), data.land).then((r) => ({ zg: q.zg, r })))
       );
 
       const byUrl = new Map<string, SearchHit>();
@@ -189,13 +191,11 @@ export const searchDoctors = createServerFn({ method: "POST" })
 
       // Deep scrape /kontakt + /impressum for hits without emails (cap + concurrency)
       if (data.deepScrape) {
-        const noEmail = hits.filter((h) => h.emails.length === 0).slice(0, 8);
-        await mapPool(noEmail, 4, async (h) => {
+        const noEmail = hits.filter((h) => h.emails.length === 0).slice(0, 3);
+        await mapPool(noEmail, 2, async (h) => {
           try {
             const origin = new URL(h.url).origin;
-            const candidates = data.land === "DE"
-              ? ["/kontakt", "/impressum"]
-              : ["/kontakt", "/kontakty"];
+            const candidates = data.land === "DE" ? ["/impressum"] : ["/kontakt"];
             for (const path of candidates) {
               const md = await fcScrape(apiKey, origin + path);
               if (!md) continue;
@@ -213,13 +213,13 @@ export const searchDoctors = createServerFn({ method: "POST" })
       // Sort: hits with emails first, then by zielgruppe
       hits = hits.sort((a, b) => (b.emails.length > 0 ? 1 : 0) - (a.emails.length > 0 ? 1 : 0));
 
-      return { ok: true, hits, queries: queries.map((q) => q.q) };
+      return { ok: true, hits, queries: allQueries.map((q) => q.q) };
     } catch (e) {
       return {
         ok: false,
         error: e instanceof Error ? e.message : "Unbekannter Fehler",
         hits: [],
-        queries: queries.map((q) => q.q),
+        queries: allQueries.map((q) => q.q),
       };
     }
   });
