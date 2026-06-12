@@ -124,6 +124,54 @@ export function SearchPanel({ onAddLeads }: Props) {
     }
   };
 
+  const parseDirectoryUrls = () => {
+    const urls = directoryUrls
+      .split(/[\s,;]+/)
+      .map((u) => u.trim())
+      .filter(Boolean)
+      .map((u) => (/^https?:\/\//i.test(u) ? u : `https://${u}`));
+    const valid: string[] = [];
+    for (const url of urls) {
+      try {
+        valid.push(new URL(url).toString());
+      } catch {
+        toast.error(`Ungültige URL: ${url}`);
+        return null;
+      }
+    }
+    return Array.from(new Set(valid)).slice(0, 8);
+  };
+
+  const handleDirectoryScan = async () => {
+    const urls = parseDirectoryUrls();
+    if (!urls || urls.length === 0) {
+      toast.error("Bitte mindestens eine Verzeichnis-URL eintragen");
+      return;
+    }
+    setDirectoryLoading(true);
+    setError(null);
+    setDirectoryHits([]);
+    try {
+      const activeLand = land === "Andere" ? "DE" : land;
+      const res = await runDirectoryScan({
+        data: {
+          urls,
+          land: activeLand,
+          suchbegriff: [fachgebiet, ort].filter(Boolean).join(" "),
+          maxPagesPerDirectory: 25,
+        },
+      });
+      if (!res.ok) throw new Error(res.error ?? "Verzeichnis-Scan fehlgeschlagen");
+      setDirectoryHits(res.emails);
+      if (res.emails.length === 0) toast.info("Keine E-Mails in den Verzeichnissen gefunden");
+      else toast.success(`${res.emails.length} E-Mail(s) gefunden`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+    } finally {
+      setDirectoryLoading(false);
+    }
+  };
+
   const toLeads = (hit: SearchHit): Lead[] => {
     const now = new Date().toISOString();
     return hit.emails.map((email) => ({
@@ -160,6 +208,29 @@ export function SearchPanel({ onAddLeads }: Props) {
     }
     onAddLeads(leads);
     toast.success(`${leads.length} Lead(s) importiert`);
+  };
+
+  const importDirectoryEmails = () => {
+    if (directoryHits.length === 0) {
+      toast.error("Keine E-Mails zum Importieren vorhanden");
+      return;
+    }
+    const now = new Date().toISOString();
+    onAddLeads(
+      directoryHits.map((hit) => ({
+        id: newId(),
+        name: hit.email,
+        email: hit.email,
+        land: land === "Andere" ? "DE" : (land as Country),
+        fachgebiet,
+        stadt: ort || undefined,
+        gerichtsgutachter,
+        status: "neu",
+        quelle: `Verzeichnis-Scan: ${hit.sourceUrl}`,
+        erstelltAm: now,
+      })),
+    );
+    toast.success(`${directoryHits.length} E-Mail(s) importiert`);
   };
 
   return (
