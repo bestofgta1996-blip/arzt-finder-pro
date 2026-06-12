@@ -203,21 +203,46 @@ export function TendersPanel() {
                   <Globe2 className="size-4" /> Öffentliche Ausschreibungen
                 </CardTitle>
                 <CardDescription>
-                  Stündlich aktualisiert über TED (EU-Amtsblatt). Weitere Portale schrittweise im Tab „Portale &amp; Verbindungen".
+                  Automatische Dauersuche läuft alle 10 Minuten über TED (EU-Amtsblatt) – Treffer landen direkt hier. Daneben kannst du jederzeit eine eigene manuelle Suche starten.
                 </CardDescription>
               </div>
               <Button onClick={onRunNow} disabled={refreshing} variant="outline" size="sm">
                 <RefreshCcw className={refreshing ? "animate-spin" : ""} />
-                {refreshing ? "Suche läuft …" : "Jetzt suchen"}
+                {refreshing ? "Suche läuft …" : "Dauersuche jetzt starten"}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="border rounded-md p-3 bg-muted/30 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Search className="size-4 text-primary" /> Manuelle Suche
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr_auto] gap-2">
+                <Input
+                  placeholder="Schlagworte – z. B. Gutachten, Orthopädie, Übersetzung"
+                  value={manualKeywords}
+                  onChange={(e) => setManualKeywords(e.target.value)}
+                />
+                <Input
+                  placeholder="Länder (DE, AT, CH, FR …)"
+                  value={manualLaender}
+                  onChange={(e) => setManualLaender(e.target.value.toUpperCase())}
+                />
+                <Button onClick={onManualSearch} disabled={manualRunning}>
+                  <Search className={manualRunning ? "animate-pulse" : ""} />
+                  {manualRunning ? "Suche …" : "Suchen"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Standard-CPV-Codes für medizinische Gutachten/Sachverständigendienste werden automatisch angewendet. Mehrere Schlagworte mit Komma trennen.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="relative md:col-span-2">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
-                  placeholder="Titel, Auftraggeber, CPV …"
+                  placeholder="Treffer filtern: Titel, Auftraggeber, CPV …"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9"
@@ -234,11 +259,12 @@ export function TendersPanel() {
                 </SelectContent>
               </Select>
               <Input
-                placeholder="Land (z. B. DE, AT, FR)"
+                placeholder="Land filtern (DE, AT …)"
                 value={landFilter}
                 onChange={(e) => setLandFilter(e.target.value.toUpperCase().slice(0, 3))}
               />
             </div>
+
 
             {loading ? (
               <p className="text-sm text-muted-foreground">Lade …</p>
