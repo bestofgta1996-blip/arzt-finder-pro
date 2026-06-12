@@ -169,10 +169,15 @@ function Home() {
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10">
         {/* Mobile: aktueller Bereich als Label */}
-        <div className="md:hidden mb-4 flex items-center gap-2 text-sm">
-          <current.icon className="size-4 text-primary" />
-          <span className="font-medium">{current.label}</span>
-        </div>
+        {(() => {
+          const CurrentIcon = current.icon;
+          return (
+            <div className="md:hidden mb-4 flex items-center gap-2 text-sm">
+              <CurrentIcon className="size-4 text-primary" />
+              <span className="font-medium">{current.label}</span>
+            </div>
+          );
+        })()}
 
         <Tabs value={tab} onValueChange={setTab} className="space-y-6">
           <TabsList className="hidden md:inline-grid md:grid-cols-6">
