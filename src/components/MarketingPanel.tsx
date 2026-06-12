@@ -703,7 +703,7 @@ export function MarketingPanel() {
                             >
                               <Mail className="size-4" />
                             </a>
-                            <Button size="sm" variant="ghost" onClick={() => removeOneLead(lead.id)}>
+                            <Button size="sm" variant="ghost" onClick={() => removeOneLead(lead.id)} aria-label="Lead löschen">
                               <Trash2 className="size-4" />
                             </Button>
                           </div>
