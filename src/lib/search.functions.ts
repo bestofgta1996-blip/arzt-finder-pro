@@ -166,7 +166,7 @@ export const searchDoctors = createServerFn({ method: "POST" })
         for (const item of r) {
           const url = item.url ?? "";
           if (!url) continue;
-          const text = `${item.title ?? ""}\n${item.description ?? ""}\n${item.markdown ?? ""}`;
+          const text = `${item.title ?? ""}\n${item.description ?? ""}`;
           const { emails, phones } = extract(text);
           const existing = byUrl.get(url);
           if (existing) {
