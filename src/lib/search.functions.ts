@@ -176,7 +176,7 @@ export const searchDoctors = createServerFn({ method: "POST" })
             byUrl.set(url, {
               title: item.title ?? url,
               url,
-              snippet: (item.description ?? item.markdown ?? "").slice(0, 280),
+              snippet: (item.description ?? "").slice(0, 280),
               emails,
               phones,
               zielgruppe: zg,
