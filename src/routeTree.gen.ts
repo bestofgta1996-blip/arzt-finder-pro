@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiPublicHooksTendersTickRouteImport } from './routes/api/public/hooks/tenders-tick'
 import { Route as ApiPublicHooksSearchTickRouteImport } from './routes/api/public/hooks/search-tick'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -33,17 +39,20 @@ const ApiPublicHooksSearchTickRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
@@ -51,25 +60,39 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/sitemap.xml'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/hooks/search-tick' | '/api/public/hooks/tenders-tick'
+  to:
+    | '/'
+    | '/sitemap.xml'
+    | '/api/public/hooks/search-tick'
+    | '/api/public/hooks/tenders-tick'
   id:
     | '__root__'
     | '/'
+    | '/sitemap.xml'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiPublicHooksSearchTickRoute: typeof ApiPublicHooksSearchTickRoute
   ApiPublicHooksTendersTickRoute: typeof ApiPublicHooksTendersTickRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -96,9 +119,20 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiPublicHooksSearchTickRoute: ApiPublicHooksSearchTickRoute,
   ApiPublicHooksTendersTickRoute: ApiPublicHooksTendersTickRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
