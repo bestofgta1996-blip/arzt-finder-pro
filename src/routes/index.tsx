@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { SearchPanel } from "@/components/SearchPanel";
 import { PastePanel } from "@/components/PastePanel";
 import { LeadsList } from "@/components/LeadsList";
@@ -11,7 +13,16 @@ import { MarketingPanel } from "@/components/MarketingPanel";
 import { TendersPanel } from "@/components/TendersPanel";
 import { loadLeads, saveLeads, type Lead } from "@/lib/leads";
 import { upsertLeads, LAENDER } from "@/lib/marketing.functions";
-import { Stethoscope, Globe2 } from "lucide-react";
+import { Stethoscope, Globe2, Menu, ListChecks, FileSearch, Search, ClipboardPaste, Database, FileText } from "lucide-react";
+
+const NAV_ITEMS = [
+  { value: "marketing", label: "Marketinglisten", icon: ListChecks },
+  { value: "ausschreibungen", label: "Ausschreibungen", icon: FileSearch },
+  { value: "suche", label: "Suche", icon: Search },
+  { value: "einfuegen", label: "Einfügen", icon: ClipboardPaste },
+  { value: "leads", label: "Lokal", icon: Database },
+  { value: "vorlagen", label: "Vorlagen", icon: FileText },
+] as const;
 
 export const Route = createFileRoute("/")({
   head: () => ({
