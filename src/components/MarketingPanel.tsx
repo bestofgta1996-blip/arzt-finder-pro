@@ -119,7 +119,20 @@ export function MarketingPanel() {
       if (!byFach.has(key)) byFach.set(key, []);
       byFach.get(key)!.push(l);
     }
-    return Array.from(byFach.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    // innerhalb jeder Fachgruppe: nach Qualitäts-Score absteigend
+    for (const arr of byFach.values()) {
+      arr.sort(
+        (a, b) =>
+          (b.qualitaet_score ?? 0) - (a.qualitaet_score ?? 0) ||
+          (a.erstellt_am < b.erstellt_am ? 1 : -1),
+      );
+    }
+    // Fachgebiete nach durchschnittlichem Score sortieren (wichtigste oben)
+    return Array.from(byFach.entries()).sort((a, b) => {
+      const avg = (xs: DbLead[]) =>
+        xs.reduce((s, l) => s + (l.qualitaet_score ?? 0), 0) / Math.max(1, xs.length);
+      return avg(b[1]) - avg(a[1]);
+    });
   }, [leadsByLand, land]);
 
   const counts = useMemo(() => {
