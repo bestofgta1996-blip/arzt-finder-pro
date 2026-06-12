@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicHooksTendersTickRouteImport } from './routes/api/public/hooks/tenders-tick'
 import { Route as ApiPublicHooksSearchTickRouteImport } from './routes/api/public/hooks/search-tick'
 
 const IndexRoute = IndexRouteImport.update({
@@ -17,6 +18,12 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksTendersTickRoute =
+  ApiPublicHooksTendersTickRouteImport.update({
+    id: '/api/public/hooks/tenders-tick',
+    path: '/api/public/hooks/tenders-tick',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksSearchTickRoute =
   ApiPublicHooksSearchTickRouteImport.update({
     id: '/api/public/hooks/search-tick',
@@ -27,27 +34,38 @@ const ApiPublicHooksSearchTickRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
+  '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
+  '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
+  '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/public/hooks/search-tick'
+  fullPaths:
+    | '/'
+    | '/api/public/hooks/search-tick'
+    | '/api/public/hooks/tenders-tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/hooks/search-tick'
-  id: '__root__' | '/' | '/api/public/hooks/search-tick'
+  to: '/' | '/api/public/hooks/search-tick' | '/api/public/hooks/tenders-tick'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/public/hooks/search-tick'
+    | '/api/public/hooks/tenders-tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiPublicHooksSearchTickRoute: typeof ApiPublicHooksSearchTickRoute
+  ApiPublicHooksTendersTickRoute: typeof ApiPublicHooksTendersTickRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -57,6 +75,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/tenders-tick': {
+      id: '/api/public/hooks/tenders-tick'
+      path: '/api/public/hooks/tenders-tick'
+      fullPath: '/api/public/hooks/tenders-tick'
+      preLoaderRoute: typeof ApiPublicHooksTendersTickRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/search-tick': {
@@ -72,7 +97,18 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiPublicHooksSearchTickRoute: ApiPublicHooksSearchTickRoute,
+  ApiPublicHooksTendersTickRoute: ApiPublicHooksTendersTickRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
