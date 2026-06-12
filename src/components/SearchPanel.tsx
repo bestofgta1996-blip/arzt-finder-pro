@@ -157,8 +157,8 @@ export function SearchPanel({ onAddLeads }: Props) {
         <CardHeader>
           <CardTitle className="text-lg">Online-Suche – alle Stakeholder</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Durchsucht parallel Praxen, Kliniken, Gutachter, Versicherungen, Anwälte & Reha. Kontaktseiten werden
-            automatisch nachgescrapt.
+            Durchsucht Praxen, Kliniken, Gutachter, Versicherungen, Anwälte & Reha in kleinen stabilen Suchläufen.
+            Treffer mit sichtbaren Kontaktdaten können direkt übernommen werden.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
