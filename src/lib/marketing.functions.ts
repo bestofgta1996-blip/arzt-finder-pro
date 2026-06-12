@@ -17,10 +17,21 @@ export const LEAD_STATUS = [
   "neu",
   "angeschrieben",
   "geantwortet",
+  "bounce",
   "kunde",
   "nicht_relevant",
 ] as const;
 export type LeadStatusDb = (typeof LEAD_STATUS)[number];
+
+// Hierarchie für Auto-Updates: höherer Status wird beim Outlook-Sync nicht zurückgestuft
+const STATUS_RANK: Record<LeadStatusDb, number> = {
+  neu: 0,
+  angeschrieben: 1,
+  bounce: 2,
+  geantwortet: 3,
+  kunde: 4,
+  nicht_relevant: 5,
+};
 
 export interface DbLead {
   id: string;
@@ -37,7 +48,10 @@ export interface DbLead {
   gerichtsgutachter: boolean;
   status: LeadStatusDb;
   last_contacted_at: string | null;
+  last_replied_at: string | null;
+  bounced_at: string | null;
   outlook_message_id: string | null;
+  outlook_folder_id: string | null;
   notiz: string | null;
   erstellt_am: string;
   updated_at: string;
@@ -206,71 +220,402 @@ export const deleteSearchJob = createServerFn({ method: "POST" })
 
 // ---- Outlook sync (no-op solange Connector nicht verbunden) -------
 
+// ---- Outlook sync ------------------------------------------------------
+
+const GATEWAY = "https://connector-gateway.lovable.dev/microsoft_outlook";
+
+function outlookHeaders() {
+  const outlookKey = process.env.MICROSOFT_OUTLOOK_API_KEY;
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  if (!outlookKey || !lovableKey) return null;
+  return {
+    Authorization: `Bearer ${lovableKey}`,
+    "X-Connection-Api-Key": outlookKey,
+  } as Record<string, string>;
+}
+
+function sanitizeFolderName(name: string): string {
+  // Outlook erlaubt die meisten Zeichen, aber wir entschärfen Slashes/Backslashes
+  return name.replace(/[\\/]/g, "-").trim().slice(0, 120) || "Allgemein";
+}
+
+async function findOrCreateChildFolder(
+  parentId: string,
+  name: string,
+  headers: Record<string, string>,
+): Promise<string | null> {
+  // 1) try filter
+  const filterUrl = `${GATEWAY}/me/mailFolders/${parentId}/childFolders?$top=100&$filter=displayName eq '${encodeURIComponent(name.replace(/'/g, "''"))}'`;
+  const res = await fetch(filterUrl, { headers });
+  if (res.ok) {
+    const j = (await res.json()) as { value?: Array<{ id?: string }> };
+    const existing = j.value?.[0]?.id;
+    if (existing) return existing;
+  }
+  // 2) create
+  const created = await fetch(`${GATEWAY}/me/mailFolders/${parentId}/childFolders`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ displayName: name }),
+  });
+  if (!created.ok) return null;
+  const j = (await created.json()) as { id?: string };
+  return j.id ?? null;
+}
+
+/**
+ * Legt fehlende Outlook-Ordner an: Leads / <Land> / <Fachgebiet>
+ */
+export const ensureOutlookFolders = createServerFn({ method: "POST" })
+  .handler(async (): Promise<{ ok: boolean; created: number; total: number; reason?: string }> => {
+    const headers = outlookHeaders();
+    if (!headers) {
+      return {
+        ok: false,
+        created: 0,
+        total: 0,
+        reason: "Outlook ist noch nicht verbunden. Bitte den Microsoft-Outlook-Connector aktivieren.",
+      };
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Distinct Land/Fachgebiet aus leads
+    const { data: rows } = await supabaseAdmin
+      .from("leads")
+      .select("land,fachgebiet")
+      .not("fachgebiet", "is", null)
+      .limit(10000);
+    const pairs = new Map<string, { land: string; fachgebiet: string }>();
+    for (const r of (rows ?? []) as Array<{ land: string; fachgebiet: string | null }>) {
+      const f = (r.fachgebiet ?? "").trim();
+      if (!f) continue;
+      const key = `${r.land}|${f}`;
+      if (!pairs.has(key)) pairs.set(key, { land: r.land, fachgebiet: f });
+    }
+
+    // Root: "Leads"
+    const inboxRes = await fetch(`${GATEWAY}/me/mailFolders/inbox`, { headers });
+    if (!inboxRes.ok) return { ok: false, created: 0, total: 0, reason: `Outlook-Aufruf fehlgeschlagen (${inboxRes.status})` };
+    const inbox = (await inboxRes.json()) as { id?: string };
+    if (!inbox.id) return { ok: false, created: 0, total: 0, reason: "Posteingang nicht gefunden" };
+
+    const rootId = await findOrCreateChildFolder(inbox.id, "Leads", headers);
+    if (!rootId) return { ok: false, created: 0, total: 0, reason: "Konnte 'Leads'-Ordner nicht anlegen" };
+
+    let created = 0;
+    for (const { land, fachgebiet } of pairs.values()) {
+      // Prüfen ob schon in DB
+      const { data: existing } = await supabaseAdmin
+        .from("outlook_folders")
+        .select("id,folder_id")
+        .eq("land", land)
+        .eq("fachgebiet", fachgebiet)
+        .maybeSingle();
+      if (existing && (existing as { folder_id: string }).folder_id) continue;
+
+      const landFolderId = await findOrCreateChildFolder(rootId, sanitizeFolderName(land), headers);
+      if (!landFolderId) continue;
+      const fachId = await findOrCreateChildFolder(landFolderId, sanitizeFolderName(fachgebiet), headers);
+      if (!fachId) continue;
+
+      await supabaseAdmin.from("outlook_folders").upsert(
+        {
+          land,
+          fachgebiet,
+          folder_id: fachId,
+          folder_path: `Leads/${land}/${fachgebiet}`,
+        },
+        { onConflict: "land,fachgebiet" },
+      );
+      created++;
+    }
+    return { ok: true, created, total: pairs.size };
+  });
+
+interface SyncSummary {
+  contacted: number;
+  replied: number;
+  bounced: number;
+  moved: number;
+  reason?: string;
+}
+
+async function moveMessageToFolder(
+  messageId: string,
+  folderId: string,
+  headers: Record<string, string>,
+): Promise<boolean> {
+  const res = await fetch(`${GATEWAY}/me/messages/${messageId}/move`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ destinationId: folderId }),
+  });
+  return res.ok;
+}
+
+async function updateLeadStatus(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseAdmin: any,
+  leadId: string,
+  currentStatus: LeadStatusDb,
+  newStatus: LeadStatusDb,
+  patch: Record<string, unknown>,
+): Promise<boolean> {
+  // Höherer Rank wird nicht überschrieben (außer wir setzen denselben)
+  if (STATUS_RANK[currentStatus] > STATUS_RANK[newStatus]) {
+    // trotzdem Timestamps aktualisieren
+    if (Object.keys(patch).length === 0) return false;
+    await supabaseAdmin.from("leads").update(patch).eq("id", leadId);
+    return false;
+  }
+  await supabaseAdmin
+    .from("leads")
+    .update({ ...patch, status: newStatus })
+    .eq("id", leadId);
+  return true;
+}
+
+/**
+ * Voll-Sync: Gesendet + Antworten + Bounces, optional Mails in Fachgebiet-Ordner verschieben.
+ */
+export const syncOutlookAll = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ moveToFolders: z.boolean().optional().default(false) }).parse(d ?? {}))
+  .handler(async ({ data }): Promise<{ ok: boolean; summary: SyncSummary; lastRunAt?: string; reason?: string }> => {
+    const headers = outlookHeaders();
+    if (!headers) {
+      return {
+        ok: false,
+        summary: { contacted: 0, replied: 0, bounced: 0, moved: 0 },
+        reason: "Outlook ist noch nicht verbunden. Bitte den Microsoft-Outlook-Connector aktivieren.",
+      };
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Sync-State laden
+    const { data: state } = await supabaseAdmin.from("outlook_sync_state").select("*").eq("id", 1).maybeSingle();
+    const fallbackSince = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString();
+    const sinceSent = (state as { last_sent_check_at?: string } | null)?.last_sent_check_at ?? fallbackSince;
+    const sinceInbox = (state as { last_inbox_check_at?: string } | null)?.last_inbox_check_at ?? fallbackSince;
+    const runStartedAt = new Date().toISOString();
+
+    // Folder-Mapping laden (für Move)
+    const { data: folderRows } = await supabaseAdmin
+      .from("outlook_folders")
+      .select("land,fachgebiet,folder_id");
+    const folderMap = new Map<string, string>();
+    for (const f of (folderRows ?? []) as Array<{ land: string; fachgebiet: string; folder_id: string }>) {
+      folderMap.set(`${f.land}|${f.fachgebiet}`, f.folder_id);
+    }
+
+    const summary: SyncSummary = { contacted: 0, replied: 0, bounced: 0, moved: 0 };
+
+    // --- 1) Gesendete Mails -------------------------------------------------
+    const sentUrl =
+      `${GATEWAY}/me/mailFolders/sentitems/messages` +
+      `?$top=500&$select=id,toRecipients,sentDateTime,subject` +
+      `&$filter=sentDateTime gt ${sinceSent}`;
+    const sentRes = await fetch(sentUrl, { headers });
+    if (sentRes.ok) {
+      const sentJson = (await sentRes.json()) as {
+        value?: Array<{
+          id?: string;
+          sentDateTime?: string;
+          toRecipients?: Array<{ emailAddress?: { address?: string } }>;
+        }>;
+      };
+      const recipients = new Map<string, { id: string; sentAt: string }>();
+      for (const msg of sentJson.value ?? []) {
+        const sentAt = msg.sentDateTime ?? runStartedAt;
+        for (const r of msg.toRecipients ?? []) {
+          const addr = r.emailAddress?.address?.toLowerCase();
+          if (!addr) continue;
+          const prev = recipients.get(addr);
+          if (!prev || prev.sentAt < sentAt) recipients.set(addr, { id: msg.id ?? "", sentAt });
+        }
+      }
+      if (recipients.size > 0) {
+        const { data: leads } = await supabaseAdmin
+          .from("leads")
+          .select("id,email,land,fachgebiet,status")
+          .in("email", Array.from(recipients.keys()));
+        for (const lead of (leads ?? []) as Array<{
+          id: string;
+          email: string;
+          land: string;
+          fachgebiet: string | null;
+          status: LeadStatusDb;
+        }>) {
+          const meta = recipients.get(lead.email.toLowerCase());
+          if (!meta) continue;
+          const changed = await updateLeadStatus(supabaseAdmin, lead.id, lead.status, "angeschrieben", {
+            last_contacted_at: meta.sentAt,
+            outlook_message_id: meta.id || null,
+          });
+          if (changed) summary.contacted++;
+
+          // Optional: Mail in Fachgebiet-Ordner verschieben
+          if (data.moveToFolders && meta.id && lead.fachgebiet) {
+            const target = folderMap.get(`${lead.land}|${lead.fachgebiet}`);
+            if (target) {
+              const ok = await moveMessageToFolder(meta.id, target, headers);
+              if (ok) summary.moved++;
+            }
+          }
+        }
+      }
+    }
+
+    // --- 2) Inbox / Antworten ----------------------------------------------
+    const inboxUrl =
+      `${GATEWAY}/me/mailFolders/inbox/messages` +
+      `?$top=500&$select=id,from,receivedDateTime,subject,internetMessageHeaders` +
+      `&$filter=receivedDateTime gt ${sinceInbox}`;
+    const inboxRes = await fetch(inboxUrl, { headers });
+    if (inboxRes.ok) {
+      const inboxJson = (await inboxRes.json()) as {
+        value?: Array<{
+          id?: string;
+          receivedDateTime?: string;
+          from?: { emailAddress?: { address?: string } };
+          subject?: string;
+        }>;
+      };
+      const senders = new Map<string, { id: string; receivedAt: string }>();
+      for (const msg of inboxJson.value ?? []) {
+        const addr = msg.from?.emailAddress?.address?.toLowerCase();
+        if (!addr) continue;
+        const receivedAt = msg.receivedDateTime ?? runStartedAt;
+        const prev = senders.get(addr);
+        if (!prev || prev.receivedAt < receivedAt) senders.set(addr, { id: msg.id ?? "", receivedAt });
+      }
+
+      if (senders.size > 0) {
+        const { data: leads } = await supabaseAdmin
+          .from("leads")
+          .select("id,email,land,fachgebiet,status")
+          .in("email", Array.from(senders.keys()));
+        for (const lead of (leads ?? []) as Array<{
+          id: string;
+          email: string;
+          land: string;
+          fachgebiet: string | null;
+          status: LeadStatusDb;
+        }>) {
+          const meta = senders.get(lead.email.toLowerCase());
+          if (!meta) continue;
+          const changed = await updateLeadStatus(supabaseAdmin, lead.id, lead.status, "geantwortet", {
+            last_replied_at: meta.receivedAt,
+          });
+          if (changed) summary.replied++;
+
+          if (data.moveToFolders && meta.id && lead.fachgebiet) {
+            const target = folderMap.get(`${lead.land}|${lead.fachgebiet}`);
+            if (target) {
+              const ok = await moveMessageToFolder(meta.id, target, headers);
+              if (ok) summary.moved++;
+            }
+          }
+        }
+      }
+
+      // --- 3) Bounces (vereinfacht: typische Failure-Notification Absender) -
+      const bounceMatch = (msg: {
+        from?: { emailAddress?: { address?: string } };
+        subject?: string;
+      }): boolean => {
+        const sender = (msg.from?.emailAddress?.address ?? "").toLowerCase();
+        const subj = (msg.subject ?? "").toLowerCase();
+        if (sender.includes("mailer-daemon") || sender.includes("postmaster")) return true;
+        if (subj.includes("undeliverable") || subj.includes("unzustellbar") || subj.includes("delivery failed") || subj.includes("delivery status")) return true;
+        return false;
+      };
+
+      // Body-basiertes Re-Fetch nur für markierte Bounces (pro Mail einzeln, um Quote zu sparen)
+      const bouncesToParse = (inboxJson.value ?? []).filter(bounceMatch).slice(0, 50);
+      for (const bounce of bouncesToParse) {
+        if (!bounce.id) continue;
+        const detailRes = await fetch(
+          `${GATEWAY}/me/messages/${bounce.id}?$select=id,body,subject`,
+          { headers },
+        );
+        if (!detailRes.ok) continue;
+        const detail = (await detailRes.json()) as { body?: { content?: string }; subject?: string };
+        const haystack = `${detail.subject ?? ""} ${detail.body?.content ?? ""}`.toLowerCase();
+        // Finde Emails im Body
+        const matches = haystack.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) ?? [];
+        const unique = Array.from(new Set(matches.map((s) => s.toLowerCase())));
+        if (unique.length === 0) continue;
+        const { data: leads } = await supabaseAdmin
+          .from("leads")
+          .select("id,email,status")
+          .in("email", unique);
+        for (const lead of (leads ?? []) as Array<{ id: string; email: string; status: LeadStatusDb }>) {
+          const changed = await updateLeadStatus(supabaseAdmin, lead.id, lead.status, "bounce", {
+            bounced_at: runStartedAt,
+          });
+          if (changed) summary.bounced++;
+        }
+      }
+    }
+
+    // Sync-State aktualisieren
+    await supabaseAdmin
+      .from("outlook_sync_state")
+      .upsert({
+        id: 1,
+        last_sent_check_at: runStartedAt,
+        last_inbox_check_at: runStartedAt,
+        last_bounce_check_at: runStartedAt,
+        last_full_sync_at: runStartedAt,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        last_summary: summary as any,
+      });
+
+    return { ok: true, summary, lastRunAt: runStartedAt };
+  });
+
+/**
+ * Alias für Abwärtskompatibilität — ruft den vollen Sync ohne Folder-Move auf.
+ */
 export const syncOutlookContacted = createServerFn({ method: "POST" })
   .handler(async (): Promise<{ ok: boolean; matched: number; reason?: string }> => {
-    const outlookKey = process.env.MICROSOFT_OUTLOOK_API_KEY;
-    const lovableKey = process.env.LOVABLE_API_KEY;
-    if (!outlookKey || !lovableKey) {
+    const headers = outlookHeaders();
+    if (!headers) {
       return {
         ok: false,
         matched: 0,
         reason: "Outlook ist noch nicht verbunden. Bitte den Microsoft-Outlook-Connector aktivieren.",
       };
     }
-
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString();
-    const url = `https://connector-gateway.lovable.dev/microsoft_outlook/me/mailFolders/sentitems/messages?$top=200&$select=id,toRecipients,sentDateTime&$filter=sentDateTime ge ${since}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": outlookKey,
-      },
-    });
-    if (!res.ok) {
-      return { ok: false, matched: 0, reason: `Outlook-Aufruf fehlgeschlagen (${res.status})` };
-    }
-    const json = (await res.json()) as {
-      value?: Array<{
-        id?: string;
-        sentDateTime?: string;
-        toRecipients?: Array<{ emailAddress?: { address?: string } }>;
-      }>;
-    };
-    const recipients = new Map<string, { id: string; sentAt: string }>();
-    for (const msg of json.value ?? []) {
-      const sentAt = msg.sentDateTime ?? new Date().toISOString();
-      for (const r of msg.toRecipients ?? []) {
-        const addr = r.emailAddress?.address?.toLowerCase();
-        if (!addr) continue;
-        const existing = recipients.get(addr);
-        if (!existing || existing.sentAt < sentAt) {
-          recipients.set(addr, { id: msg.id ?? "", sentAt });
-        }
-      }
-    }
-    if (recipients.size === 0) return { ok: true, matched: 0 };
-
-    const emails = Array.from(recipients.keys());
-    const { data: leads, error } = await supabaseAdmin
-      .from("leads")
-      .select("id,email,land")
-      .in("email", emails);
-    if (error) return { ok: false, matched: 0, reason: error.message };
-
-    let matched = 0;
-    for (const lead of leads ?? []) {
-      const meta = recipients.get((lead as { email: string }).email.toLowerCase());
-      if (!meta) continue;
-      await supabaseAdmin
-        .from("leads")
-        .update({
-          status: "angeschrieben",
-          last_contacted_at: meta.sentAt,
-          outlook_message_id: meta.id || null,
-        })
-        .eq("id", (lead as { id: string }).id);
-      matched++;
-    }
+    const result = await syncOutlookAll({ data: { moveToFolders: false } });
+    if (!result.ok) return { ok: false, matched: 0, reason: result.reason };
+    const matched = result.summary.contacted + result.summary.replied + result.summary.bounced;
     return { ok: true, matched };
+  });
+
+export const getOutlookSyncState = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{
+    ok: boolean;
+    connected: boolean;
+    lastRunAt: string | null;
+    lastSummary: SyncSummary | null;
+    folderCount: number;
+  }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const headers = outlookHeaders();
+    const { data: state } = await supabaseAdmin
+      .from("outlook_sync_state")
+      .select("last_full_sync_at,last_summary")
+      .eq("id", 1)
+      .maybeSingle();
+    const { count } = await supabaseAdmin
+      .from("outlook_folders")
+      .select("id", { count: "exact", head: true });
+    return {
+      ok: true,
+      connected: !!headers,
+      lastRunAt: (state as { last_full_sync_at?: string } | null)?.last_full_sync_at ?? null,
+      lastSummary: ((state as { last_summary?: SyncSummary } | null)?.last_summary as SyncSummary) ?? null,
+      folderCount: count ?? 0,
+    };
   });

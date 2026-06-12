@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       leads: {
         Row: {
+          bounced_at: string | null
           email: string
           erstellt_am: string
           fachgebiet: string | null
@@ -23,8 +24,10 @@ export type Database = {
           id: string
           land: string
           last_contacted_at: string | null
+          last_replied_at: string | null
           name: string | null
           notiz: string | null
+          outlook_folder_id: string | null
           outlook_message_id: string | null
           qualitaet_score: number
           qualitaets_merkmale: string[]
@@ -38,6 +41,7 @@ export type Database = {
           zielgruppe: string | null
         }
         Insert: {
+          bounced_at?: string | null
           email: string
           erstellt_am?: string
           fachgebiet?: string | null
@@ -45,8 +49,10 @@ export type Database = {
           id?: string
           land: string
           last_contacted_at?: string | null
+          last_replied_at?: string | null
           name?: string | null
           notiz?: string | null
+          outlook_folder_id?: string | null
           outlook_message_id?: string | null
           qualitaet_score?: number
           qualitaets_merkmale?: string[]
@@ -60,6 +66,7 @@ export type Database = {
           zielgruppe?: string | null
         }
         Update: {
+          bounced_at?: string | null
           email?: string
           erstellt_am?: string
           fachgebiet?: string | null
@@ -67,8 +74,10 @@ export type Database = {
           id?: string
           land?: string
           last_contacted_at?: string | null
+          last_replied_at?: string | null
           name?: string | null
           notiz?: string | null
+          outlook_folder_id?: string | null
           outlook_message_id?: string | null
           qualitaet_score?: number
           qualitaets_merkmale?: string[]
@@ -80,6 +89,66 @@ export type Database = {
           updated_at?: string
           website?: string | null
           zielgruppe?: string | null
+        }
+        Relationships: []
+      }
+      outlook_folders: {
+        Row: {
+          created_at: string
+          fachgebiet: string
+          folder_id: string
+          folder_path: string | null
+          id: string
+          land: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          fachgebiet: string
+          folder_id: string
+          folder_path?: string | null
+          id?: string
+          land: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          fachgebiet?: string
+          folder_id?: string
+          folder_path?: string | null
+          id?: string
+          land?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      outlook_sync_state: {
+        Row: {
+          id: number
+          last_bounce_check_at: string | null
+          last_full_sync_at: string | null
+          last_inbox_check_at: string | null
+          last_sent_check_at: string | null
+          last_summary: Json | null
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          last_bounce_check_at?: string | null
+          last_full_sync_at?: string | null
+          last_inbox_check_at?: string | null
+          last_sent_check_at?: string | null
+          last_summary?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          last_bounce_check_at?: string | null
+          last_full_sync_at?: string | null
+          last_inbox_check_at?: string | null
+          last_sent_check_at?: string | null
+          last_summary?: Json | null
+          updated_at?: string
         }
         Relationships: []
       }

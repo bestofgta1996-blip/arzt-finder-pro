@@ -15,7 +15,9 @@ import {
   deleteSearchJob,
   updateLead,
   deleteLead,
-  syncOutlookContacted,
+  syncOutlookAll,
+  ensureOutlookFolders,
+  getOutlookSyncState,
   LAENDER,
   LAND_LABEL,
   type DbLead,
@@ -25,12 +27,13 @@ import {
 } from "@/lib/marketing.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play } from "lucide-react";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
   angeschrieben: "Angeschrieben",
   geantwortet: "Geantwortet",
+  bounce: "Bounce",
   kunde: "Kunde",
   nicht_relevant: "Nicht relevant",
 };
@@ -39,6 +42,7 @@ const STATUS_VARIANT: Record<LeadStatusDb, "default" | "secondary" | "outline" |
   neu: "secondary",
   angeschrieben: "default",
   geantwortet: "default",
+  bounce: "destructive",
   kunde: "default",
   nicht_relevant: "outline",
 };
@@ -53,6 +57,15 @@ const ZIELGRUPPEN_LABEL: Record<string, string> = {
   berufsgenossenschaft: "BG",
 };
 
+const ALL_FACH = "__all__";
+
+interface OutlookState {
+  connected: boolean;
+  lastRunAt: string | null;
+  lastSummary: { contacted: number; replied: number; bounced: number; moved: number } | null;
+  folderCount: number;
+}
+
 export function MarketingPanel() {
   const fetchLeads = useServerFn(listLeads);
   const fetchJobs = useServerFn(listSearchJobs);
@@ -60,13 +73,24 @@ export function MarketingPanel() {
   const removeJob = useServerFn(deleteSearchJob);
   const patchLead = useServerFn(updateLead);
   const dropLead = useServerFn(deleteLead);
-  const syncOutlook = useServerFn(syncOutlookContacted);
+  const syncOutlook = useServerFn(syncOutlookAll);
+  const ensureFolders = useServerFn(ensureOutlookFolders);
+  const fetchOutlookState = useServerFn(getOutlookSyncState);
 
   const [land, setLand] = useState<LandCode>("DE");
+  const [activeFach, setActiveFach] = useState<string>(ALL_FACH);
   const [leads, setLeads] = useState<DbLead[]>([]);
   const [jobs, setJobs] = useState<DbSearchJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [creatingFolders, setCreatingFolders] = useState(false);
+  const [moveToFolders, setMoveToFolders] = useState(false);
+  const [outlookState, setOutlookState] = useState<OutlookState>({
+    connected: false,
+    lastRunAt: null,
+    lastSummary: null,
+    folderCount: 0,
+  });
 
   // New job form
   const [newJob, setNewJob] = useState({
@@ -79,9 +103,21 @@ export function MarketingPanel() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [l, j] = await Promise.all([fetchLeads({ data: {} }), fetchJobs()]);
+      const [l, j, o] = await Promise.all([
+        fetchLeads({ data: {} }),
+        fetchJobs(),
+        fetchOutlookState(),
+      ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
+      if (o.ok) {
+        setOutlookState({
+          connected: o.connected,
+          lastRunAt: o.lastRunAt,
+          lastSummary: o.lastSummary,
+          folderCount: o.folderCount,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -111,29 +147,39 @@ export function MarketingPanel() {
     return map;
   }, [leads]);
 
-  const grouped = useMemo(() => {
+  // Fachgebiete für aktuell selektiertes Land mit Counts
+  const fachFolders = useMemo(() => {
     const list = leadsByLand.get(land) ?? [];
-    const byFach = new Map<string, DbLead[]>();
+    const map = new Map<string, { total: number; neu: number; kontaktiert: number; geantwortet: number; bounce: number }>();
     for (const l of list) {
       const key = l.fachgebiet?.trim() || "Ohne Fachgebiet";
-      if (!byFach.has(key)) byFach.set(key, []);
-      byFach.get(key)!.push(l);
+      const entry = map.get(key) ?? { total: 0, neu: 0, kontaktiert: 0, geantwortet: 0, bounce: 0 };
+      entry.total++;
+      if (l.status === "neu") entry.neu++;
+      else if (l.status === "angeschrieben") entry.kontaktiert++;
+      else if (l.status === "geantwortet") entry.geantwortet++;
+      else if (l.status === "bounce") entry.bounce++;
+      map.set(key, entry);
     }
-    // innerhalb jeder Fachgruppe: nach Qualitäts-Score absteigend
-    for (const arr of byFach.values()) {
-      arr.sort(
-        (a, b) =>
-          (b.qualitaet_score ?? 0) - (a.qualitaet_score ?? 0) ||
-          (a.erstellt_am < b.erstellt_am ? 1 : -1),
-      );
-    }
-    // Fachgebiete nach durchschnittlichem Score sortieren (wichtigste oben)
-    return Array.from(byFach.entries()).sort((a, b) => {
-      const avg = (xs: DbLead[]) =>
-        xs.reduce((s, l) => s + (l.qualitaet_score ?? 0), 0) / Math.max(1, xs.length);
-      return avg(b[1]) - avg(a[1]);
-    });
+    return Array.from(map.entries()).sort((a, b) => b[1].total - a[1].total);
   }, [leadsByLand, land]);
+
+  // Reset Fach-Filter beim Landwechsel
+  useEffect(() => {
+    setActiveFach(ALL_FACH);
+  }, [land]);
+
+  const visibleLeads = useMemo(() => {
+    const list = leadsByLand.get(land) ?? [];
+    const filtered = activeFach === ALL_FACH
+      ? list
+      : list.filter((l) => (l.fachgebiet?.trim() || "Ohne Fachgebiet") === activeFach);
+    return [...filtered].sort(
+      (a, b) =>
+        (b.qualitaet_score ?? 0) - (a.qualitaet_score ?? 0) ||
+        (a.erstellt_am < b.erstellt_am ? 1 : -1),
+    );
+  }, [leadsByLand, land, activeFach]);
 
   const counts = useMemo(() => {
     const c: Record<LandCode, { total: number; contacted: number }> = {} as never;
@@ -164,7 +210,7 @@ export function MarketingPanel() {
       },
     });
     if (res.ok) {
-      toast.success("Dauersuche gespeichert – läuft stündlich");
+      toast.success("Suchprofil gespeichert");
       void reload();
     } else toast.error(res.error ?? "Fehler");
   };
@@ -186,7 +232,7 @@ export function MarketingPanel() {
   };
 
   const removeOneJob = async (id: string) => {
-    if (!confirm("Diese Dauersuche löschen?")) return;
+    if (!confirm("Dieses Suchprofil löschen?")) return;
     const r = await removeJob({ data: { id } });
     if (r.ok) {
       toast.success("Gelöscht");
@@ -209,11 +255,32 @@ export function MarketingPanel() {
   const handleOutlookSync = async () => {
     setSyncing(true);
     try {
-      const r = await syncOutlook();
-      if (r.ok) toast.success(`Outlook abgeglichen: ${r.matched} Lead(s) markiert`);
-      else toast.info(r.reason ?? "Outlook nicht verbunden");
+      const r = await syncOutlook({ data: { moveToFolders } });
+      if (r.ok) {
+        const s = r.summary;
+        toast.success(
+          `Abgleich fertig: ${s.contacted} kontaktiert · ${s.replied} geantwortet · ${s.bounced} Bounce${moveToFolders ? ` · ${s.moved} verschoben` : ""}`,
+        );
+      } else {
+        toast.error(r.reason ?? "Outlook-Sync fehlgeschlagen");
+      }
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleEnsureFolders = async () => {
+    setCreatingFolders(true);
+    try {
+      const r = await ensureFolders();
+      if (r.ok) {
+        toast.success(`Outlook-Ordner aktualisiert: ${r.created} neu, ${r.total} insgesamt`);
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Ordner-Anlage fehlgeschlagen");
+      }
+    } finally {
+      setCreatingFolders(false);
     }
   };
 
@@ -221,21 +288,58 @@ export function MarketingPanel() {
 
   return (
     <div className="space-y-6">
+      {/* Outlook-Sync-Card */}
       <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="pt-6 flex items-start gap-3 flex-wrap">
-          <div className="flex-1 min-w-[260px]">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Mail className="size-4" /> Outlook-Abgleich
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Markiert automatisch alle Leads als „Angeschrieben", deren E-Mail in den letzten 30 Tagen
-              aus deinem Outlook-Postausgang versendet wurde. Outlook-Connector muss verbunden sein.
-            </p>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="size-4" /> Outlook-Abgleich
+            {outlookState.connected ? (
+              <Badge variant="default" className="text-[10px]">verbunden</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">
+                <AlertTriangle className="size-3 mr-1" /> nicht verbunden
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Aktualisiert Lead-Status automatisch aus deinem Outlook: gesendete Mails → <b>Angeschrieben</b>, Antworten → <b>Geantwortet</b>, Failure Notifications → <b>Bounce</b>. Optional werden zugehörige Mails in Fachgebiet-Ordner (<code>Leads/&lt;Land&gt;/&lt;Fach&gt;</code>) verschoben.
+          </p>
+
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={moveToFolders} onCheckedChange={(c) => setMoveToFolders(c === true)} />
+              Mails in Fachgebiet-Ordner verschieben
+            </label>
+            <div className="flex-1" />
+            <Button onClick={handleEnsureFolders} disabled={creatingFolders} variant="outline" size="sm">
+              {creatingFolders ? <Loader2 className="size-4 animate-spin mr-2" /> : <FolderTree className="size-4 mr-2" />}
+              Outlook-Ordner anlegen
+            </Button>
+            <Button onClick={handleOutlookSync} disabled={syncing} variant="secondary">
+              {syncing ? <Loader2 className="size-4 animate-spin mr-2" /> : <RefreshCw className="size-4 mr-2" />}
+              Jetzt mit Outlook abgleichen
+            </Button>
           </div>
-          <Button onClick={handleOutlookSync} disabled={syncing} variant="secondary">
-            {syncing ? <Loader2 className="size-4 animate-spin mr-2" /> : <RefreshCw className="size-4 mr-2" />}
-            Outlook jetzt abgleichen
-          </Button>
+
+          {(outlookState.lastRunAt || outlookState.folderCount > 0) && (
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t">
+              {outlookState.lastRunAt && (
+                <span>
+                  Letzter Sync: {new Date(outlookState.lastRunAt).toLocaleString("de-DE")}
+                </span>
+              )}
+              {outlookState.lastSummary && (
+                <>
+                  <span className="inline-flex items-center gap-1"><Send className="size-3" /> {outlookState.lastSummary.contacted} kontaktiert</span>
+                  <span className="inline-flex items-center gap-1"><Inbox className="size-3" /> {outlookState.lastSummary.replied} geantwortet</span>
+                  <span className="inline-flex items-center gap-1"><AlertTriangle className="size-3" /> {outlookState.lastSummary.bounced} Bounce</span>
+                </>
+              )}
+              <span className="inline-flex items-center gap-1"><Folder className="size-3" /> {outlookState.folderCount} Fachgebiet-Ordner gemappt</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -255,13 +359,12 @@ export function MarketingPanel() {
           <TabsContent key={code} value={code} className="space-y-6 mt-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Dauersuche für {LAND_LABEL[code]}</CardTitle>
+                <CardTitle className="text-base">Suchprofil für {LAND_LABEL[code]}</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Läuft stündlich im Hintergrund und ergänzt neue Treffer automatisch.
+                  Profile sind Vorlagen für die manuelle Suche. Im Tab „Suche" kannst du sie starten, Treffer werden hier ergänzt.
                   {!(["DE", "PL"] as LandCode[]).includes(code) && (
                     <span className="block text-amber-600 mt-1">
-                      Hinweis: Hintergrundsuche aktuell nur für DE und PL aktiv. Treffer für {LAND_LABEL[code]} können
-                      über die manuelle Suche / den Verzeichnis-Scan ergänzt werden.
+                      Hinweis: Profile aktuell nur für DE und PL nutzbar. Treffer für {LAND_LABEL[code]} kannst du über manuelle Suche / Import ergänzen.
                     </span>
                   )}
                 </p>
@@ -321,13 +424,13 @@ export function MarketingPanel() {
                   </div>
                   <div className="flex justify-end">
                     <Button onClick={handleSaveJob}>
-                      <Plus className="size-4 mr-1" /> Als Dauersuche speichern
+                      <Plus className="size-4 mr-1" /> Suchprofil speichern
                     </Button>
                   </div>
 
                   {landJobs.length > 0 && (
                     <div className="space-y-2 pt-2 border-t">
-                      <p className="text-xs font-medium text-muted-foreground">Aktive Dauersuchen ({landJobs.length})</p>
+                      <p className="text-xs font-medium text-muted-foreground">Gespeicherte Profile ({landJobs.length})</p>
                       {landJobs.map((j) => (
                         <div key={j.id} className="flex items-center justify-between gap-2 text-sm border rounded-md px-3 py-2">
                           <div className="min-w-0 flex-1">
@@ -356,108 +459,165 @@ export function MarketingPanel() {
               )}
             </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <CardTitle className="text-base">
-                    Marketingliste {LAND_LABEL[code]} · {counts[code]?.total ?? 0} Lead(s)
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {counts[code]?.contacted ?? 0} bereits angeschrieben · gruppiert nach Fachgebiet
-                  </p>
-                </div>
-                <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
-                  <RefreshCw className={`size-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Aktualisieren
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {grouped.length === 0 && code === land && (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Noch keine Leads für {LAND_LABEL[code]}. Lege eine Dauersuche an oder nutze den Tab „Suche".
-                  </p>
-                )}
-                {code === land && grouped.map(([fach, list]) => (
-                  <div key={fach} className="mb-6 last:mb-0">
-                    <h4 className="font-semibold text-sm mb-2 sticky top-0 bg-background py-1">
-                      {fach} <span className="text-muted-foreground font-normal">· {list.length}</span>
-                    </h4>
-                    <div className="space-y-1">
-                      {list.map((lead) => (
-                        <div key={lead.id} className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 hover:bg-accent/40">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge
-                                className={
-                                  "text-[10px] border " +
-                                  ((lead.qualitaet_score ?? 0) >= 60
-                                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                    : (lead.qualitaet_score ?? 0) >= 30
-                                    ? "bg-amber-100 text-amber-800 border-amber-200"
-                                    : "bg-slate-100 text-slate-700 border-slate-200")
-                                }
-                                title={lead.qualitaets_merkmale?.join(" · ") || "Keine Pluspunkte erkannt"}
-                              >
-                                ★ {lead.qualitaet_score ?? 0}
-                              </Badge>
-                              <span className="font-mono text-xs break-all">{lead.email}</span>
-                              <Badge variant={STATUS_VARIANT[lead.status]} className="text-[10px]">
-                                {STATUS_LABEL[lead.status]}
-                              </Badge>
-                              {lead.last_contacted_at && (
-                                <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
-                                  <CheckCircle2 className="size-3" />
-                                  {new Date(lead.last_contacted_at).toLocaleDateString("de-DE")}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {lead.name && <span>{lead.name}</span>}
-                              {lead.qualitaets_merkmale && lead.qualitaets_merkmale.length > 0 && (
-                                <span className="ml-1 text-[10px] opacity-75">
-                                  {lead.qualitaets_merkmale.slice(0, 3).join(" · ")}
-                                </span>
-                              )}
-                              {lead.zielgruppe && <span> · {ZIELGRUPPEN_LABEL[lead.zielgruppe] ?? lead.zielgruppe}</span>}
-                              {lead.stadt && <span> · {lead.stadt}</span>}
-                              {lead.quelle_url && (
-                                <a href={lead.quelle_url} target="_blank" rel="noreferrer noopener" className="ml-1 inline-flex items-center gap-0.5 hover:text-primary">
-                                  Quelle <ExternalLink className="size-3" />
-                                </a>
-                              )}
-                            </div>
+            {code === land && (
+              <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+                {/* Fachgebiet-Sidebar */}
+                <Card className="h-fit lg:sticky lg:top-4">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <FolderTree className="size-4" /> Fachgebiete
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-2">
+                    <button
+                      onClick={() => setActiveFach(ALL_FACH)}
+                      className={`w-full text-left text-sm rounded-md px-2 py-1.5 flex items-center justify-between gap-2 hover:bg-accent ${activeFach === ALL_FACH ? "bg-accent font-medium" : ""}`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        {activeFach === ALL_FACH ? <FolderOpen className="size-4" /> : <Folder className="size-4" />}
+                        Alle
+                      </span>
+                      <Badge variant="secondary" className="text-[10px]">{counts[code]?.total ?? 0}</Badge>
+                    </button>
+                    {fachFolders.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-2 py-3 text-center">
+                        Noch keine Fachgebiete
+                      </p>
+                    )}
+                    {fachFolders.map(([name, c]) => {
+                      const isActive = activeFach === name;
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => setActiveFach(name)}
+                          className={`w-full text-left text-sm rounded-md px-2 py-1.5 hover:bg-accent ${isActive ? "bg-accent font-medium" : ""}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-2 truncate">
+                              {isActive ? <FolderOpen className="size-4" /> : <Folder className="size-4" />}
+                              <span className="truncate">{name}</span>
+                            </span>
+                            <Badge variant="secondary" className="text-[10px] shrink-0">{c.total}</Badge>
                           </div>
-                          <Select
-                            value={lead.status}
-                            onValueChange={(v) => markContacted(lead.id, v as LeadStatusDb)}
-                          >
-                            <SelectTrigger className="h-7 w-[140px] text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(Object.keys(STATUS_LABEL) as LeadStatusDb[]).map((s) => (
-                                <SelectItem key={s} value={s} className="text-xs">
-                                  {STATUS_LABEL[s]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <a
-                            href={`mailto:${lead.email}`}
-                            className="inline-flex items-center justify-center size-7 rounded hover:bg-accent"
-                            title="Mail schreiben"
-                          >
-                            <Mail className="size-4" />
-                          </a>
-                          <Button size="sm" variant="ghost" onClick={() => removeOneLead(lead.id)}>
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      ))}
+                          {(c.kontaktiert > 0 || c.geantwortet > 0 || c.bounce > 0) && (
+                            <div className="flex gap-1 mt-1 ml-6 flex-wrap">
+                              {c.kontaktiert > 0 && <span className="text-[10px] text-muted-foreground">📤 {c.kontaktiert}</span>}
+                              {c.geantwortet > 0 && <span className="text-[10px] text-emerald-600">↩ {c.geantwortet}</span>}
+                              {c.bounce > 0 && <span className="text-[10px] text-destructive">⚠ {c.bounce}</span>}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+
+                {/* Lead-Liste */}
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <CardTitle className="text-base">
+                        {activeFach === ALL_FACH ? `Alle Fachgebiete · ${LAND_LABEL[code]}` : activeFach} · {visibleLeads.length} Lead(s)
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {counts[code]?.contacted ?? 0} insgesamt angeschrieben in {LAND_LABEL[code]}
+                      </p>
                     </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+                    <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
+                      <RefreshCw className={`size-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Aktualisieren
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    {visibleLeads.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">
+                        Keine Leads {activeFach === ALL_FACH ? `für ${LAND_LABEL[code]}` : `im Fachgebiet „${activeFach}"`}.
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {visibleLeads.map((lead) => (
+                          <div key={lead.id} className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 hover:bg-accent/40">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge
+                                  className={
+                                    "text-[10px] border " +
+                                    ((lead.qualitaet_score ?? 0) >= 60
+                                      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                      : (lead.qualitaet_score ?? 0) >= 30
+                                      ? "bg-amber-100 text-amber-800 border-amber-200"
+                                      : "bg-slate-100 text-slate-700 border-slate-200")
+                                  }
+                                  title={lead.qualitaets_merkmale?.join(" · ") || "Keine Pluspunkte erkannt"}
+                                >
+                                  ★ {lead.qualitaet_score ?? 0}
+                                </Badge>
+                                <span className="font-mono text-xs break-all">{lead.email}</span>
+                                <Badge variant={STATUS_VARIANT[lead.status]} className="text-[10px]">
+                                  {STATUS_LABEL[lead.status]}
+                                </Badge>
+                                {lead.last_contacted_at && (
+                                  <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1" title="Zuletzt kontaktiert">
+                                    <Send className="size-3" />
+                                    {new Date(lead.last_contacted_at).toLocaleDateString("de-DE")}
+                                  </span>
+                                )}
+                                {lead.last_replied_at && (
+                                  <span className="text-[10px] text-emerald-700 inline-flex items-center gap-1" title="Letzte Antwort">
+                                    <CheckCircle2 className="size-3" />
+                                    {new Date(lead.last_replied_at).toLocaleDateString("de-DE")}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {lead.name && <span>{lead.name}</span>}
+                                {lead.fachgebiet && activeFach === ALL_FACH && <span> · {lead.fachgebiet}</span>}
+                                {lead.qualitaets_merkmale && lead.qualitaets_merkmale.length > 0 && (
+                                  <span className="ml-1 text-[10px] opacity-75">
+                                    {lead.qualitaets_merkmale.slice(0, 3).join(" · ")}
+                                  </span>
+                                )}
+                                {lead.zielgruppe && <span> · {ZIELGRUPPEN_LABEL[lead.zielgruppe] ?? lead.zielgruppe}</span>}
+                                {lead.stadt && <span> · {lead.stadt}</span>}
+                                {lead.quelle_url && (
+                                  <a href={lead.quelle_url} target="_blank" rel="noreferrer noopener" className="ml-1 inline-flex items-center gap-0.5 hover:text-primary">
+                                    Quelle <ExternalLink className="size-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                            <Select
+                              value={lead.status}
+                              onValueChange={(v) => markContacted(lead.id, v as LeadStatusDb)}
+                            >
+                              <SelectTrigger className="h-7 w-[140px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(Object.keys(STATUS_LABEL) as LeadStatusDb[]).map((s) => (
+                                  <SelectItem key={s} value={s} className="text-xs">
+                                    {STATUS_LABEL[s]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <a
+                              href={`mailto:${lead.email}`}
+                              className="inline-flex items-center justify-center size-7 rounded hover:bg-accent"
+                              title="Mail schreiben"
+                            >
+                              <Mail className="size-4" />
+                            </a>
+                            <Button size="sm" variant="ghost" onClick={() => removeOneLead(lead.id)}>
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </TabsContent>
         ))}
       </Tabs>
