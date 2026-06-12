@@ -2,12 +2,19 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { searchDoctors, type SearchHit, type Zielgruppe } from "@/lib/search.functions";
+import {
+  scanDirectoriesForEmails,
+  searchDoctors,
+  type DirectoryEmailHit,
+  type SearchHit,
+  type Zielgruppe,
+} from "@/lib/search.functions";
 import { newId, type Lead, type Country } from "@/lib/leads";
 import { Loader2, Plus, ExternalLink, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +50,7 @@ const QUERY_COUNT: Record<"DE" | "PL", Record<Zielgruppe, number>> = {
 
 export function SearchPanel({ onAddLeads }: Props) {
   const runSearch = useServerFn(searchDoctors);
+  const runDirectoryScan = useServerFn(scanDirectoriesForEmails);
   const [fachgebiet, setFachgebiet] = useState("Orthopädie");
   const [ort, setOrt] = useState("");
   const [land, setLand] = useState<Country>("DE");
@@ -51,7 +59,10 @@ export function SearchPanel({ onAddLeads }: Props) {
     new Set<Zielgruppe>(["gutachter", "fachaerzte", "kliniken"])
   );
   const [loading, setLoading] = useState(false);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [hits, setHits] = useState<SearchHit[]>([]);
+  const [directoryUrls, setDirectoryUrls] = useState("");
+  const [directoryHits, setDirectoryHits] = useState<DirectoryEmailHit[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const toggleZg = (zg: Zielgruppe) => {
