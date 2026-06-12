@@ -171,6 +171,14 @@ function normalizeDirectoryUrl(raw: string) {
   return url.toString();
 }
 
+function safeNormalizeDirectoryUrl(raw: string) {
+  try {
+    return normalizeDirectoryUrl(raw);
+  } catch {
+    return null;
+  }
+}
+
 export const searchDoctors = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => SearchInput.parse(data))
   .handler(async ({ data }): Promise<{ ok: boolean; error?: string; hits: SearchHit[]; queries: string[] }> => {
@@ -268,7 +276,7 @@ export const scanDirectoriesForEmails = createServerFn({ method: "POST" })
         .join(" ");
       const discovered = await mapPool(data.urls, 2, async (url) => {
         const mapped = await fcMap(apiKey, url, searchTerms, data.maxPagesPerDirectory);
-        return [normalizeDirectoryUrl(url), ...mapped.map(normalizeDirectoryUrl)];
+        return [normalizeDirectoryUrl(url), ...mapped.map(safeNormalizeDirectoryUrl).filter((u): u is string => Boolean(u))];
       });
       const pages = Array.from(new Set(discovered.flat())).slice(0, data.urls.length * data.maxPagesPerDirectory);
       const emailByAddress = new Map<string, DirectoryEmailHit>();
