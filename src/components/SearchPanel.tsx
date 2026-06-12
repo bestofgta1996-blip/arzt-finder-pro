@@ -2,12 +2,19 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { searchDoctors, type SearchHit, type Zielgruppe } from "@/lib/search.functions";
+import {
+  scanDirectoriesForEmails,
+  searchDoctors,
+  type DirectoryEmailHit,
+  type SearchHit,
+  type Zielgruppe,
+} from "@/lib/search.functions";
 import { newId, type Lead, type Country } from "@/lib/leads";
 import { Loader2, Plus, ExternalLink, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +50,7 @@ const QUERY_COUNT: Record<"DE" | "PL", Record<Zielgruppe, number>> = {
 
 export function SearchPanel({ onAddLeads }: Props) {
   const runSearch = useServerFn(searchDoctors);
+  const runDirectoryScan = useServerFn(scanDirectoriesForEmails);
   const [fachgebiet, setFachgebiet] = useState("Orthopädie");
   const [ort, setOrt] = useState("");
   const [land, setLand] = useState<Country>("DE");
@@ -51,7 +59,10 @@ export function SearchPanel({ onAddLeads }: Props) {
     new Set<Zielgruppe>(["gutachter", "fachaerzte", "kliniken"])
   );
   const [loading, setLoading] = useState(false);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [hits, setHits] = useState<SearchHit[]>([]);
+  const [directoryUrls, setDirectoryUrls] = useState("");
+  const [directoryHits, setDirectoryHits] = useState<DirectoryEmailHit[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const toggleZg = (zg: Zielgruppe) => {
@@ -113,6 +124,54 @@ export function SearchPanel({ onAddLeads }: Props) {
     }
   };
 
+  const parseDirectoryUrls = () => {
+    const urls = directoryUrls
+      .split(/[\s,;]+/)
+      .map((u) => u.trim())
+      .filter(Boolean)
+      .map((u) => (/^https?:\/\//i.test(u) ? u : `https://${u}`));
+    const valid: string[] = [];
+    for (const url of urls) {
+      try {
+        valid.push(new URL(url).toString());
+      } catch {
+        toast.error(`Ungültige URL: ${url}`);
+        return null;
+      }
+    }
+    return Array.from(new Set(valid)).slice(0, 8);
+  };
+
+  const handleDirectoryScan = async () => {
+    const urls = parseDirectoryUrls();
+    if (!urls || urls.length === 0) {
+      toast.error("Bitte mindestens eine Verzeichnis-URL eintragen");
+      return;
+    }
+    setDirectoryLoading(true);
+    setError(null);
+    setDirectoryHits([]);
+    try {
+      const activeLand = land === "Andere" ? "DE" : land;
+      const res = await runDirectoryScan({
+        data: {
+          urls,
+          land: activeLand,
+          suchbegriff: [fachgebiet, ort].filter(Boolean).join(" "),
+          maxPagesPerDirectory: 25,
+        },
+      });
+      if (!res.ok) throw new Error(res.error ?? "Verzeichnis-Scan fehlgeschlagen");
+      setDirectoryHits(res.emails);
+      if (res.emails.length === 0) toast.info("Keine E-Mails in den Verzeichnissen gefunden");
+      else toast.success(`${res.emails.length} E-Mail(s) gefunden`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+    } finally {
+      setDirectoryLoading(false);
+    }
+  };
+
   const toLeads = (hit: SearchHit): Lead[] => {
     const now = new Date().toISOString();
     return hit.emails.map((email) => ({
@@ -149,6 +208,29 @@ export function SearchPanel({ onAddLeads }: Props) {
     }
     onAddLeads(leads);
     toast.success(`${leads.length} Lead(s) importiert`);
+  };
+
+  const importDirectoryEmails = () => {
+    if (directoryHits.length === 0) {
+      toast.error("Keine E-Mails zum Importieren vorhanden");
+      return;
+    }
+    const now = new Date().toISOString();
+    onAddLeads(
+      directoryHits.map((hit) => ({
+        id: newId(),
+        name: hit.email,
+        email: hit.email,
+        land: land === "Andere" ? "DE" : (land as Country),
+        fachgebiet,
+        stadt: ort || undefined,
+        gerichtsgutachter,
+        status: "neu",
+        quelle: `Verzeichnis-Scan: ${hit.sourceUrl}`,
+        erstelltAm: now,
+      })),
+    );
+    toast.success(`${directoryHits.length} E-Mail(s) importiert`);
   };
 
   return (
@@ -223,6 +305,35 @@ export function SearchPanel({ onAddLeads }: Props) {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Verzeichnis-Scan – nur E-Mails</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Trage große Arztverzeichnisse ein. Der Scan folgt passenden Unterseiten und übernimmt ausschließlich gefundene
+            E-Mail-Adressen.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="directoryUrls">Verzeichnis-URLs</Label>
+            <Textarea
+              id="directoryUrls"
+              value={directoryUrls}
+              onChange={(e) => setDirectoryUrls(e.target.value)}
+              placeholder="https://www.beispiel-verzeichnis.de/aerzte&#10;https://www.beispiel-verzeichnis.de/gutachter"
+              className="min-h-28"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <p className="text-xs text-muted-foreground">Maximal 8 Verzeichnisse pro Lauf · bis zu 25 Unterseiten je Verzeichnis.</p>
+            <Button type="button" variant="secondary" onClick={handleDirectoryScan} disabled={directoryLoading || loading}>
+              {directoryLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+              E-Mails aus Verzeichnissen holen
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {error && (
         <Card className="border-destructive/40 bg-destructive/5">
           <CardContent className="pt-6 flex gap-3">
@@ -290,6 +401,36 @@ export function SearchPanel({ onAddLeads }: Props) {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {directoryHits.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold">{directoryHits.length} E-Mail(s) aus Verzeichnissen</h3>
+            <Button size="sm" variant="secondary" onClick={importDirectoryEmails}>
+              Alle E-Mails importieren
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="pt-5 space-y-2">
+              {directoryHits.map((hit) => (
+                <div key={`${hit.email}-${hit.sourceUrl}`} className="flex items-center justify-between gap-3 border-b py-2 last:border-b-0">
+                  <Badge variant="secondary" className="font-mono text-xs break-all whitespace-normal">
+                    {hit.email}
+                  </Badge>
+                  <a
+                    href={hit.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 shrink-0"
+                  >
+                    Quelle <ExternalLink className="size-3" />
+                  </a>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

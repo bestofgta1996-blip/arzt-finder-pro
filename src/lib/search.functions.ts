@@ -24,6 +24,13 @@ const SearchInput = z.object({
   maxQueries: z.number().int().min(1).max(3).optional().default(2),
 });
 
+const DirectoryScanInput = z.object({
+  urls: z.array(z.string().url()).min(1).max(8),
+  suchbegriff: z.string().max(160).optional().default(""),
+  land: z.enum(["DE", "PL"]).default("DE"),
+  maxPagesPerDirectory: z.number().int().min(5).max(60).default(25),
+});
+
 export interface SearchHit {
   title: string;
   url: string;
@@ -31,6 +38,11 @@ export interface SearchHit {
   emails: string[];
   phones: string[];
   zielgruppe: Zielgruppe;
+}
+
+export interface DirectoryEmailHit {
+  email: string;
+  sourceUrl: string;
 }
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -119,6 +131,18 @@ async function fcScrape(apiKey: string, url: string): Promise<string> {
   }
 }
 
+async function fcMap(apiKey: string, url: string, search: string, limit: number): Promise<string[]> {
+  try {
+    const res = await fcFetch("map", apiKey, { url, search, limit, includeSubdomains: false }, 12000);
+    if (!res.ok) return [];
+    const json = (await res.json()) as { links?: string[]; data?: { links?: string[] } | string[] };
+    if (Array.isArray(json.data)) return json.data;
+    return json.data?.links ?? json.links ?? [];
+  } catch {
+    return [];
+  }
+}
+
 async function mapPool<T, R>(items: T[], concurrency: number, fn: (x: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length) as R[];
   let i = 0;
@@ -139,6 +163,20 @@ function extract(text: string) {
     .filter((e) => !/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(e));
   const phones = Array.from(new Set((text.match(PHONE_RE) ?? []).map((p) => p.trim())));
   return { emails, phones };
+}
+
+function normalizeDirectoryUrl(raw: string) {
+  const url = new URL(raw);
+  url.hash = "";
+  return url.toString();
+}
+
+function safeNormalizeDirectoryUrl(raw: string) {
+  try {
+    return normalizeDirectoryUrl(raw);
+  } catch {
+    return null;
+  }
 }
 
 export const searchDoctors = createServerFn({ method: "POST" })
@@ -220,6 +258,44 @@ export const searchDoctors = createServerFn({ method: "POST" })
         error: e instanceof Error ? e.message : "Unbekannter Fehler",
         hits: [],
         queries: allQueries.map((q) => q.q),
+      };
+    }
+  });
+
+export const scanDirectoriesForEmails = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => DirectoryScanInput.parse(data))
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string; emails: DirectoryEmailHit[]; scannedUrls: string[] }> => {
+    const apiKey = process.env.FIRECRAWL_API_KEY;
+    if (!apiKey) {
+      return { ok: false, error: "Suche benötigt den Firecrawl-Connector im Lovable-Dashboard.", emails: [], scannedUrls: [] };
+    }
+
+    try {
+      const searchTerms = [data.suchbegriff, data.land === "DE" ? "arzt email kontakt impressum" : "lekarz email kontakt"]
+        .filter(Boolean)
+        .join(" ");
+      const discovered = await mapPool(data.urls, 2, async (url) => {
+        const mapped = await fcMap(apiKey, url, searchTerms, data.maxPagesPerDirectory);
+        return [normalizeDirectoryUrl(url), ...mapped.map(safeNormalizeDirectoryUrl).filter((u): u is string => Boolean(u))];
+      });
+      const pages = Array.from(new Set(discovered.flat())).slice(0, data.urls.length * data.maxPagesPerDirectory);
+      const emailByAddress = new Map<string, DirectoryEmailHit>();
+
+      await mapPool(pages, 3, async (url) => {
+        const markdown = await fcScrape(apiKey, url);
+        const { emails } = extract(markdown);
+        for (const email of emails) {
+          if (!emailByAddress.has(email)) emailByAddress.set(email, { email, sourceUrl: url });
+        }
+      });
+
+      return { ok: true, emails: Array.from(emailByAddress.values()), scannedUrls: pages };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Unbekannter Fehler",
+        emails: [],
+        scannedUrls: [],
       };
     }
   });
