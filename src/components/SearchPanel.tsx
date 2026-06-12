@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { searchDoctors, type SearchHit } from "@/lib/search.functions";
+import { searchDoctors, type SearchHit, type Zielgruppe } from "@/lib/search.functions";
 import { newId, type Lead, type Country } from "@/lib/leads";
 import { Loader2, Plus, ExternalLink, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -16,20 +16,51 @@ interface Props {
   onAddLeads: (leads: Lead[]) => void;
 }
 
+const ZIELGRUPPEN_LABEL: Record<Zielgruppe, string> = {
+  gutachter: "Gutachter / Sachverständige",
+  fachaerzte: "Fachärzte / Praxen",
+  kliniken: "Kliniken / Chefärzte",
+  versicherungen: "Versicherungen",
+  anwaelte: "Anwälte (Medizinrecht)",
+  reha: "Reha-Einrichtungen",
+  berufsgenossenschaft: "Berufsgenossenschaften / BG",
+};
+
+const ZG_ORDER: Zielgruppe[] = [
+  "gutachter",
+  "fachaerzte",
+  "kliniken",
+  "reha",
+  "versicherungen",
+  "anwaelte",
+  "berufsgenossenschaft",
+];
+
 export function SearchPanel({ onAddLeads }: Props) {
   const runSearch = useServerFn(searchDoctors);
   const [fachgebiet, setFachgebiet] = useState("Orthopädie");
   const [ort, setOrt] = useState("");
   const [land, setLand] = useState<Country>("DE");
   const [gerichtsgutachter, setGG] = useState(false);
+  const [zielgruppen, setZielgruppen] = useState<Set<Zielgruppe>>(
+    new Set<Zielgruppe>(["gutachter", "fachaerzte", "kliniken"])
+  );
   const [loading, setLoading] = useState(false);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState<string>("");
+
+  const toggleZg = (zg: Zielgruppe) => {
+    setZielgruppen((prev) => {
+      const next = new Set(prev);
+      if (next.has(zg)) next.delete(zg);
+      else next.add(zg);
+      return next;
+    });
+  };
 
   const handleSearch = async () => {
-    if (!fachgebiet.trim()) {
-      toast.error("Bitte Fachgebiet angeben");
+    if (zielgruppen.size === 0) {
+      toast.error("Bitte mindestens eine Zielgruppe wählen");
       return;
     }
     setLoading(true);
@@ -37,14 +68,22 @@ export function SearchPanel({ onAddLeads }: Props) {
     setHits([]);
     try {
       const res = await runSearch({
-        data: { fachgebiet, ort, land: land === "Andere" ? "DE" : land, gerichtsgutachter, limit: 15 },
+        data: {
+          fachgebiet,
+          ort,
+          land: land === "Andere" ? "DE" : land,
+          gerichtsgutachter,
+          zielgruppen: Array.from(zielgruppen),
+          limitPerGroup: 6,
+          deepScrape: true,
+        },
       });
-      setQuery(res.query);
       if (!res.ok) {
         setError(res.error ?? "Suche fehlgeschlagen");
       } else {
         setHits(res.hits);
         if (res.hits.length === 0) toast.info("Keine Treffer – Suche verfeinern");
+        else toast.success(`${res.hits.length} Treffer aus ${zielgruppen.size} Zielgruppen`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unbekannter Fehler");
@@ -53,51 +92,40 @@ export function SearchPanel({ onAddLeads }: Props) {
     }
   };
 
+  const toLeads = (hit: SearchHit): Lead[] => {
+    const now = new Date().toISOString();
+    return hit.emails.map((email) => ({
+      id: newId(),
+      name: hit.title.slice(0, 120),
+      email,
+      telefon: hit.phones[0],
+      website: hit.url,
+      land: land === "Andere" ? "DE" : (land as Country),
+      fachgebiet,
+      stadt: ort || undefined,
+      gerichtsgutachter,
+      status: "neu",
+      quelle: `Suche [${ZIELGRUPPEN_LABEL[hit.zielgruppe]}]: ${hit.url}`,
+      erstelltAm: now,
+    }));
+  };
+
   const importHit = (hit: SearchHit) => {
     if (hit.emails.length === 0) {
       toast.error("Kein E-Mail-Treffer auf dieser Seite");
       return;
     }
-    const now = new Date().toISOString();
-    const leads: Lead[] = hit.emails.map((email) => ({
-      id: newId(),
-      name: hit.title.slice(0, 120),
-      email,
-      telefon: hit.phones[0],
-      website: hit.url,
-      land: land === "Andere" ? "DE" : (land as Country),
-      fachgebiet,
-      stadt: ort || undefined,
-      gerichtsgutachter,
-      status: "neu",
-      quelle: `Suche: ${hit.url}`,
-      erstelltAm: now,
-    }));
+    const leads = toLeads(hit);
     onAddLeads(leads);
     toast.success(`${leads.length} Lead(s) hinzugefügt`);
   };
 
   const importAll = () => {
-    const all = hits.flatMap((h) => h.emails.map((email) => ({ hit: h, email })));
-    if (all.length === 0) {
+    const leads = hits.flatMap(toLeads);
+    if (leads.length === 0) {
       toast.error("Keine E-Mails in den Treffern gefunden");
       return;
     }
-    const now = new Date().toISOString();
-    const leads: Lead[] = all.map(({ hit, email }) => ({
-      id: newId(),
-      name: hit.title.slice(0, 120),
-      email,
-      telefon: hit.phones[0],
-      website: hit.url,
-      land: land === "Andere" ? "DE" : (land as Country),
-      fachgebiet,
-      stadt: ort || undefined,
-      gerichtsgutachter,
-      status: "neu",
-      quelle: `Suche: ${hit.url}`,
-      erstelltAm: now,
-    }));
     onAddLeads(leads);
     toast.success(`${leads.length} Lead(s) importiert`);
   };
@@ -106,20 +134,21 @@ export function SearchPanel({ onAddLeads }: Props) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Online-Suche nach Ärzten & Gutachtern</CardTitle>
+          <CardTitle className="text-lg">Online-Suche – alle Stakeholder</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Durchsucht öffentliche Webseiten (Praxis-Homepages, Verzeichnisse) und extrahiert Kontakt-E-Mails.
+            Durchsucht parallel Praxen, Kliniken, Gutachter, Versicherungen, Anwälte & Reha. Kontaktseiten werden
+            automatisch nachgescrapt.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="fachgebiet">Fachgebiet</Label>
+              <Label htmlFor="fachgebiet">Fachgebiet (optional)</Label>
               <Input
                 id="fachgebiet"
                 value={fachgebiet}
                 onChange={(e) => setFachgebiet(e.target.value)}
-                placeholder="z. B. Orthopädie, Psychiatrie, Unfallchirurgie"
+                placeholder="z. B. Orthopädie, Unfallchirurgie"
               />
             </div>
             <div className="space-y-2">
@@ -144,22 +173,32 @@ export function SearchPanel({ onAddLeads }: Props) {
               </Select>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label>Zielgruppen (Mehrfachauswahl)</Label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {ZG_ORDER.map((zg) => (
+                <label
+                  key={zg}
+                  className="flex items-center gap-2 text-sm cursor-pointer rounded-md border px-3 py-2 hover:bg-accent"
+                >
+                  <Checkbox checked={zielgruppen.has(zg)} onCheckedChange={() => toggleZg(zg)} />
+                  <span>{ZIELGRUPPEN_LABEL[zg]}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox
-                checked={gerichtsgutachter}
-                onCheckedChange={(c) => setGG(c === true)}
-              />
-              Nur Gerichtsgutachter / biegli sądowi
+              <Checkbox checked={gerichtsgutachter} onCheckedChange={(c) => setGG(c === true)} />
+              Schwerpunkt Gerichtsgutachter / biegli sądowi
             </label>
             <Button onClick={handleSearch} disabled={loading}>
-              {loading ? <Loader2 className="size-4 animate-spin" /> : null}
+              {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
               Suche starten
             </Button>
           </div>
-          {query && !loading && (
-            <p className="text-xs text-muted-foreground">Suchanfrage: <code>{query}</code></p>
-          )}
         </CardContent>
       </Card>
 
@@ -178,7 +217,9 @@ export function SearchPanel({ onAddLeads }: Props) {
       {hits.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">{hits.length} Treffer</h3>
+            <h3 className="font-semibold">
+              {hits.length} Treffer · {hits.filter((h) => h.emails.length > 0).length} mit E-Mail
+            </h3>
             <Button size="sm" variant="secondary" onClick={importAll}>
               Alle E-Mails importieren
             </Button>
@@ -188,6 +229,11 @@ export function SearchPanel({ onAddLeads }: Props) {
               <CardContent className="pt-5 space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline" className="text-xs">
+                        {ZIELGRUPPEN_LABEL[hit.zielgruppe]}
+                      </Badge>
+                    </div>
                     <h4 className="font-medium truncate">{hit.title}</h4>
                     <a
                       href={hit.url}
@@ -198,28 +244,26 @@ export function SearchPanel({ onAddLeads }: Props) {
                       {hit.url} <ExternalLink className="size-3 shrink-0" />
                     </a>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={() => importHit(hit)}
-                    disabled={hit.emails.length === 0}
-                  >
+                  <Button size="sm" onClick={() => importHit(hit)} disabled={hit.emails.length === 0}>
                     <Plus className="size-4" /> Übernehmen
                   </Button>
                 </div>
-                {hit.snippet && (
-                  <p className="text-sm text-muted-foreground line-clamp-2">{hit.snippet}</p>
-                )}
+                {hit.snippet && <p className="text-sm text-muted-foreground line-clamp-2">{hit.snippet}</p>}
                 <div className="flex flex-wrap gap-2">
                   {hit.emails.length === 0 && (
                     <Badge variant="outline" className="text-muted-foreground">
-                      Keine E-Mail auf Seite gefunden
+                      Keine E-Mail gefunden
                     </Badge>
                   )}
                   {hit.emails.map((e) => (
-                    <Badge key={e} variant="secondary" className="font-mono text-xs">{e}</Badge>
+                    <Badge key={e} variant="secondary" className="font-mono text-xs">
+                      {e}
+                    </Badge>
                   ))}
                   {hit.phones.slice(0, 2).map((p) => (
-                    <Badge key={p} variant="outline" className="font-mono text-xs">{p}</Badge>
+                    <Badge key={p} variant="outline" className="font-mono text-xs">
+                      {p}
+                    </Badge>
                   ))}
                 </div>
               </CardContent>
