@@ -9,15 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GuideLegalMedicalOutreachRouteImport } from './routes/guide.legal-medical-outreach'
 import { Route as ApiPublicHooksTendersTickRouteImport } from './routes/api/public/hooks/tenders-tick'
 import { Route as ApiPublicHooksSearchTickRouteImport } from './routes/api/public/hooks/search-tick'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GuideLegalMedicalOutreachRoute =
+  GuideLegalMedicalOutreachRouteImport.update({
+    id: '/guide/legal-medical-outreach',
+    path: '/guide/legal-medical-outreach',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksTendersTickRoute =
   ApiPublicHooksTendersTickRouteImport.update({
     id: '/api/public/hooks/tenders-tick',
@@ -33,17 +46,23 @@ const ApiPublicHooksSearchTickRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/guide/legal-medical-outreach': typeof GuideLegalMedicalOutreachRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/guide/legal-medical-outreach': typeof GuideLegalMedicalOutreachRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/guide/legal-medical-outreach': typeof GuideLegalMedicalOutreachRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
@@ -51,30 +70,55 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/sitemap.xml'
+    | '/guide/legal-medical-outreach'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/hooks/search-tick' | '/api/public/hooks/tenders-tick'
+  to:
+    | '/'
+    | '/sitemap.xml'
+    | '/guide/legal-medical-outreach'
+    | '/api/public/hooks/search-tick'
+    | '/api/public/hooks/tenders-tick'
   id:
     | '__root__'
     | '/'
+    | '/sitemap.xml'
+    | '/guide/legal-medical-outreach'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  GuideLegalMedicalOutreachRoute: typeof GuideLegalMedicalOutreachRoute
   ApiPublicHooksSearchTickRoute: typeof ApiPublicHooksSearchTickRoute
   ApiPublicHooksTendersTickRoute: typeof ApiPublicHooksTendersTickRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide/legal-medical-outreach': {
+      id: '/guide/legal-medical-outreach'
+      path: '/guide/legal-medical-outreach'
+      fullPath: '/guide/legal-medical-outreach'
+      preLoaderRoute: typeof GuideLegalMedicalOutreachRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/tenders-tick': {
@@ -96,6 +140,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
+  GuideLegalMedicalOutreachRoute: GuideLegalMedicalOutreachRoute,
   ApiPublicHooksSearchTickRoute: ApiPublicHooksSearchTickRoute,
   ApiPublicHooksTendersTickRoute: ApiPublicHooksTendersTickRoute,
 }

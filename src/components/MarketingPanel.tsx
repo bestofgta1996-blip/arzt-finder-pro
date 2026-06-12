@@ -541,10 +541,10 @@ export function MarketingPanel() {
                               {j.last_hit_count != null ? ` · ${j.last_hit_count} Treffer` : ""}
                             </div>
                           </div>
-                          <Button size="sm" variant="ghost" onClick={() => toggleJob(j)} title={j.aktiv ? "Pausieren" : "Aktivieren"}>
+                          <Button size="sm" variant="ghost" onClick={() => toggleJob(j)} title={j.aktiv ? "Pausieren" : "Aktivieren"} aria-label={j.aktiv ? "Suchprofil pausieren" : "Suchprofil aktivieren"}>
                             {j.aktiv ? <Pause className="size-4" /> : <Play className="size-4" />}
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => removeOneJob(j.id)}>
+                          <Button size="sm" variant="ghost" onClick={() => removeOneJob(j.id)} aria-label="Suchprofil löschen">
                             <Trash2 className="size-4" />
                           </Button>
                         </div>
@@ -703,7 +703,7 @@ export function MarketingPanel() {
                             >
                               <Mail className="size-4" />
                             </a>
-                            <Button size="sm" variant="ghost" onClick={() => removeOneLead(lead.id)}>
+                            <Button size="sm" variant="ghost" onClick={() => removeOneLead(lead.id)} aria-label="Lead löschen">
                               <Trash2 className="size-4" />
                             </Button>
                           </div>

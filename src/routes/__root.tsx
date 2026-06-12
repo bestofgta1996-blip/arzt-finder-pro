@@ -77,19 +77,41 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "IMB Akquise – Marketinglisten für Ärzte, Gutachter & Kliniken" },
+      {
+        name: "description",
+        content:
+          "IMB Akquise: B2B-Lead-Generierung für medizinische Gutachten – Marketinglisten pro Land, Fachrichtungs-Ordner und Outlook-Abgleich für DE, PL und EU.",
+      },
+      { name: "author", content: "IMB Akquise" },
+      { property: "og:site_name", content: "IMB Akquise" },
+      { property: "og:title", content: "IMB Akquise – Marketinglisten für Ärzte, Gutachter & Kliniken" },
+      {
+        property: "og:description",
+        content:
+          "Persistente Marketinglisten pro Land mit Fachrichtungs-Ordnern und Outlook-Abgleich – Ärzte, Gerichtsgutachter, Kanzleien und Kliniken finden und verfolgen.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
+      },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Organization",
+          name: "IMB Akquise",
+          url: "https://arzt-finder-pro.lovable.app",
+          logo: "https://arzt-finder-pro.lovable.app/favicon.ico",
+          description:
+            "B2B-Lead-Generierung für medizinische Gutachten: Marketinglisten, Fachrichtungs-Ordner und Outlook-Abgleich.",
+        }),
       },
     ],
   }),

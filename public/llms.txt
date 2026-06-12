@@ -1,0 +1,10 @@
+# IMB Akquise
+
+> B2B-Lead-Generierung für medizinische Gutachten – Marketinglisten pro Land mit Fachrichtungs-Ordnern und Outlook-Abgleich.
+
+IMB Akquise hilft Anbietern medizinischer Gutachten und verwandter B2B-Dienstleistungen dabei, Ärzte, Gerichtsgutachter, Kliniken, Reha-Einrichtungen, Versicherer und Fachanwält:innen in Deutschland, Polen und Europa systematisch zu finden, in persistenten Marketinglisten zu verwalten und den Kontaktstatus über Outlook automatisch zu aktualisieren.
+
+## Pages
+
+- [Startseite](/): Marketinglisten, Suche, Ausschreibungen, Outlook-Abgleich.
+- [Rechtskonforme medizinische Kaltakquise](/guide/legal-medical-outreach): Leitfaden zu DSGVO/RODO bei der Ansprache von Ärzten und Sachverständigen in DE & PL.

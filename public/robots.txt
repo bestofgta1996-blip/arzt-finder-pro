@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://arzt-finder-pro.lovable.app/sitemap.xml

@@ -27,10 +27,28 @@ const NAV_ITEMS = [
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "IMB Akquise – Ärzte, Gutachter & Marketinglisten (DE/PL/EU)" },
-      { name: "description", content: "Persistente Marketinglisten pro Land mit Dauersuche und Outlook-Abgleich – Ärzte, Gerichtsgutachter und Kliniken in DE, PL und Europa finden und verfolgen." },
+      { title: "IMB Akquise – Lead-Generierung für Ärzte & Gutachter (DE/PL/EU)" },
+      { name: "description", content: "Persistente Marketinglisten pro Land mit Fachrichtungs-Ordnern und Outlook-Abgleich – Ärzte, Gerichtsgutachter, Kanzleien und Kliniken in DE, PL und Europa finden und verfolgen." },
       { property: "og:title", content: "IMB Akquise – Marketinglisten pro Land" },
-      { property: "og:description", content: "Ärzte und Sachverständige finden, in Marketinglisten verwalten, Outlook-Status synchronisieren." },
+      { property: "og:description", content: "Ärzte und Sachverständige finden, in Marketinglisten verwalten, Outlook-Status automatisch synchronisieren." },
+      { property: "og:url", content: "https://arzt-finder-pro.lovable.app/" },
+      { property: "og:type", content: "website" },
+    ],
+    links: [
+      { rel: "canonical", href: "https://arzt-finder-pro.lovable.app/" },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "IMB Akquise",
+          url: "https://arzt-finder-pro.lovable.app/",
+          inLanguage: "de-DE",
+          description: "Marketinglisten und Lead-Generierung für medizinische Gutachten in DE, PL und EU.",
+        }),
+      },
     ],
   }),
   component: Home,
@@ -119,7 +137,7 @@ function Home() {
             <Stethoscope className="size-5" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">IMB Akquise</h1>
+            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">IMB Akquise – Lead-Generierung für Ärzte &amp; Gutachter</h1>
             <p className="truncate text-xs text-muted-foreground flex items-center gap-1">
               <Globe2 className="size-3 shrink-0" />
               <span className="truncate">Marketinglisten · Dauersuche · Outlook</span>
