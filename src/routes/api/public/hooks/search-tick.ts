@@ -14,6 +14,45 @@ export const Route = createFileRoute("/api/public/hooks/search-tick")({
   },
 });
 
+// Standard-Dauersuche, die automatisch angelegt wird, wenn noch keine Jobs existieren.
+// Pro Land × Fachgebiet ein Job. Cron rotiert dann durch alle.
+const DEFAULT_JOBS: Array<{ land: "DE" | "PL"; fachgebiet: string }> = [
+  { land: "DE", fachgebiet: "Orthopädie" },
+  { land: "DE", fachgebiet: "Unfallchirurgie" },
+  { land: "DE", fachgebiet: "Neurologie" },
+  { land: "DE", fachgebiet: "Psychiatrie" },
+  { land: "DE", fachgebiet: "Innere Medizin" },
+  { land: "DE", fachgebiet: "Allgemeinmedizin" },
+  { land: "DE", fachgebiet: "Radiologie" },
+  { land: "DE", fachgebiet: "Anästhesie" },
+  { land: "PL", fachgebiet: "Ortopedia" },
+  { land: "PL", fachgebiet: "Neurologia" },
+  { land: "PL", fachgebiet: "Psychiatria" },
+  { land: "PL", fachgebiet: "Chirurgia" },
+];
+
+async function ensureDefaultJobs(supabaseAdmin: {
+  from: (t: string) => {
+    select: (s: string) => {
+      limit: (n: number) => Promise<{ data: unknown[] | null; error: unknown }>;
+    };
+    insert: (rows: unknown) => Promise<{ error: unknown }>;
+  };
+}) {
+  const { data: existing } = await supabaseAdmin.from("search_jobs").select("id").limit(1);
+  if (existing && existing.length > 0) return;
+  await supabaseAdmin.from("search_jobs").insert(
+    DEFAULT_JOBS.map((j) => ({
+      land: j.land,
+      fachgebiet: j.fachgebiet,
+      ort: null,
+      zielgruppen: ["gutachter", "fachaerzte", "kliniken"],
+      gerichtsgutachter: false,
+      aktiv: true,
+    })),
+  );
+}
+
 async function runTick(): Promise<Response> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) {
@@ -21,6 +60,9 @@ async function runTick(): Promise<Response> {
   }
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { searchDoctors } = await import("@/lib/search.functions");
+  const { scoreLead } = await import("@/lib/scoring");
+
+  await ensureDefaultJobs(supabaseAdmin as never);
 
   const { data: jobs, error } = await supabaseAdmin
     .from("search_jobs")
@@ -70,7 +112,7 @@ async function runTick(): Promise<Response> {
       let hitCount = 0;
       for (const hit of res.hits ?? []) {
         for (const email of hit.emails) {
-          rows.push({
+          const base = {
             land: job.land,
             fachgebiet: job.fachgebiet,
             zielgruppe: hit.zielgruppe,
@@ -83,7 +125,9 @@ async function runTick(): Promise<Response> {
             quelle_typ: "cron-suche",
             gerichtsgutachter: job.gerichtsgutachter,
             status: "neu",
-          });
+          };
+          const s = scoreLead(base);
+          rows.push({ ...base, qualitaet_score: s.score, qualitaets_merkmale: s.merkmale });
           hitCount++;
         }
       }
