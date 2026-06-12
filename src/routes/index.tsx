@@ -137,7 +137,7 @@ function Home() {
             <Stethoscope className="size-5" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">IMB Akquise</h1>
+            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">IMB Akquise – Lead-Generierung für Ärzte &amp; Gutachter</h1>
             <p className="truncate text-xs text-muted-foreground flex items-center gap-1">
               <Globe2 className="size-3 shrink-0" />
               <span className="truncate">Marketinglisten · Dauersuche · Outlook</span>
