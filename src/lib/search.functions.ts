@@ -72,38 +72,64 @@ function buildQueries(input: z.infer<typeof SearchInput>): { zg: Zielgruppe; q: 
   return out;
 }
 
+async function fcFetch(path: string, apiKey: string, body: unknown, timeoutMs: number) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(`https://api.firecrawl.dev/v2/${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fcSearch(apiKey: string, query: string, limit: number, land: "DE" | "PL") {
-  const res = await fetch("https://api.firecrawl.dev/v2/search", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      limit,
-      lang: land === "DE" ? "de" : "pl",
-      country: land === "DE" ? "de" : "pl",
-      scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
-    }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  // No inline scrapeOptions — much faster, we deep-scrape selectively below.
+  const res = await fcFetch(
+    "search",
+    apiKey,
+    { query, limit, lang: land === "DE" ? "de" : "pl", country: land === "DE" ? "de" : "pl" },
+    15000,
+  );
+  if (!res.ok) throw new Error(`search HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const json = (await res.json()) as {
-    data?: Array<{ url?: string; title?: string; description?: string; markdown?: string }>;
+    data?:
+      | { web?: Array<{ url?: string; title?: string; description?: string }> }
+      | Array<{ url?: string; title?: string; description?: string }>;
+    web?: Array<{ url?: string; title?: string; description?: string }>;
   };
-  return json.data ?? [];
+  if (Array.isArray(json.data)) return json.data;
+  return json.data?.web ?? json.web ?? [];
 }
 
 async function fcScrape(apiKey: string, url: string): Promise<string> {
   try {
-    const res = await fetch("https://api.firecrawl.dev/v2/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
-    });
+    const res = await fcFetch("scrape", apiKey, { url, formats: ["markdown"], onlyMainContent: true }, 12000);
     if (!res.ok) return "";
-    const json = (await res.json()) as { data?: { markdown?: string } };
-    return json.data?.markdown ?? "";
+    const json = (await res.json()) as { data?: { markdown?: string }; markdown?: string };
+    return json.data?.markdown ?? json.markdown ?? "";
   } catch {
     return "";
   }
+}
+
+async function mapPool<T, R>(items: T[], concurrency: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length) as R[];
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, Math.max(1, items.length)) }, async () => {
+      while (true) {
+        const idx = i++;
+        if (idx >= items.length) return;
+        out[idx] = await fn(items[idx]);
+      }
+    }),
+  );
+  return out;
 }
 
 function extract(text: string) {
@@ -140,7 +166,7 @@ export const searchDoctors = createServerFn({ method: "POST" })
         for (const item of r) {
           const url = item.url ?? "";
           if (!url) continue;
-          const text = `${item.title ?? ""}\n${item.description ?? ""}\n${item.markdown ?? ""}`;
+          const text = `${item.title ?? ""}\n${item.description ?? ""}`;
           const { emails, phones } = extract(text);
           const existing = byUrl.get(url);
           if (existing) {
@@ -150,7 +176,7 @@ export const searchDoctors = createServerFn({ method: "POST" })
             byUrl.set(url, {
               title: item.title ?? url,
               url,
-              snippet: (item.description ?? item.markdown ?? "").slice(0, 280),
+              snippet: (item.description ?? "").slice(0, 280),
               emails,
               phones,
               zielgruppe: zg,
@@ -161,29 +187,27 @@ export const searchDoctors = createServerFn({ method: "POST" })
 
       let hits = Array.from(byUrl.values());
 
-      // Deep scrape /kontakt + /impressum for hits without emails (limit to 12 to control costs)
+      // Deep scrape /kontakt + /impressum for hits without emails (cap + concurrency)
       if (data.deepScrape) {
-        const noEmail = hits.filter((h) => h.emails.length === 0).slice(0, 12);
-        await Promise.allSettled(
-          noEmail.map(async (h) => {
-            try {
-              const origin = new URL(h.url).origin;
-              const candidates = data.land === "DE"
-                ? ["/kontakt", "/impressum", "/kontakt/"]
-                : ["/kontakt", "/kontakty"];
-              for (const path of candidates) {
-                const md = await fcScrape(apiKey, origin + path);
-                if (!md) continue;
-                const { emails, phones } = extract(md);
-                h.emails = Array.from(new Set([...h.emails, ...emails]));
-                h.phones = Array.from(new Set([...h.phones, ...phones]));
-                if (h.emails.length > 0) break;
-              }
-            } catch {
-              /* ignore */
+        const noEmail = hits.filter((h) => h.emails.length === 0).slice(0, 8);
+        await mapPool(noEmail, 4, async (h) => {
+          try {
+            const origin = new URL(h.url).origin;
+            const candidates = data.land === "DE"
+              ? ["/kontakt", "/impressum"]
+              : ["/kontakt", "/kontakty"];
+            for (const path of candidates) {
+              const md = await fcScrape(apiKey, origin + path);
+              if (!md) continue;
+              const { emails, phones } = extract(md);
+              h.emails = Array.from(new Set([...h.emails, ...emails]));
+              h.phones = Array.from(new Set([...h.phones, ...phones]));
+              if (h.emails.length > 0) break;
             }
-          })
-        );
+          } catch {
+            /* ignore */
+          }
+        });
       }
 
       // Sort: hits with emails first, then by zielgruppe
