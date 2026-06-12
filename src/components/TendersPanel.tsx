@@ -148,6 +148,30 @@ export function TendersPanel() {
     }
   };
 
+  const onManualSearch = async () => {
+    setManualRunning(true);
+    try {
+      const schlagworte = manualKeywords
+        .split(/[,;\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const laender = manualLaender
+        .split(/[,;\s]+/)
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      const res = (await runManual({
+        data: { schlagworte, laender, limit: 50 },
+      })) as { ok: boolean; treffer: number; neu: number };
+      toast.success(`Manuelle Suche: ${res.treffer} Treffer, ${res.neu} neu`);
+      await load();
+    } catch (e) {
+      toast.error("Manuelle Suche fehlgeschlagen", {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setManualRunning(false);
+    }
+
   const onTogglePortal = async (p: DbPortal) => {
     await togglePortalFn({ data: { id: p.id, aktiv: !p.aktiv } });
     setPortals((prev) =>
