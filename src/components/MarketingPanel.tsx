@@ -361,6 +361,144 @@ export function MarketingPanel() {
     }
   };
 
+  const handleGmailSync = async () => {
+    setGmailSyncing(true);
+    try {
+      const r = await runGmailSync({ data: { applyLabels } });
+      if (r.ok) {
+        const s = r.summary;
+        toast.success(
+          `Gmail-Abgleich fertig: ${s.contacted} kontaktiert · ${s.replied} geantwortet · ${s.bounced} Bounce${applyLabels ? ` · ${s.labeled} gelabelt` : ""}`,
+        );
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Gmail-Abgleich fehlgeschlagen");
+      }
+    } finally {
+      setGmailSyncing(false);
+    }
+  };
+
+  const handleEnsureGmailLabels = async () => {
+    setCreatingLabels(true);
+    try {
+      const r = await runEnsureGmailLabels();
+      if (r.ok) {
+        toast.success(`Gmail-Labels aktualisiert: ${r.created} neu, ${r.total} insgesamt`);
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Label-Anlage fehlgeschlagen");
+      }
+    } finally {
+      setCreatingLabels(false);
+    }
+  };
+
+  const openDraftDialog = (lead: DbLead) => {
+    setDraftLead(lead);
+    const tpl =
+      templates.find(
+        (t) => t.zielgruppe === (lead.zielgruppe ?? "") && t.is_default,
+      ) ?? templates.find((t) => t.zielgruppe === (lead.zielgruppe ?? "")) ?? null;
+    setDraftTemplateId(tpl?.id ?? "");
+    setDraftSubject(tpl?.betreff ?? "");
+    setDraftBody(tpl?.body_text ?? "");
+  };
+
+  const onPickTemplate = (id: string) => {
+    setDraftTemplateId(id);
+    const tpl = templates.find((t) => t.id === id);
+    if (tpl) {
+      setDraftSubject(tpl.betreff);
+      setDraftBody(tpl.body_text);
+    }
+  };
+
+  const submitDraft = async () => {
+    if (!draftLead) return;
+    if (!draftSubject.trim() || !draftBody.trim()) {
+      toast.error("Betreff und Text dürfen nicht leer sein");
+      return;
+    }
+    setDraftSaving(true);
+    try {
+      const r = await runCreateDraft({
+        data: {
+          leadId: draftLead.id,
+          subject: draftSubject,
+          bodyText: draftBody,
+        },
+      });
+      if (r.ok) {
+        toast.success(`Entwurf in Gmail angelegt – jetzt prüfen und senden`);
+        setDraftLead(null);
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Entwurf konnte nicht angelegt werden");
+      }
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  const openTemplateEditor = (tpl: DbEmailTemplate | null) => {
+    if (tpl) setTplEditor(tpl);
+    else
+      setTplEditor({
+        id: "",
+        zielgruppe: "anwaelte",
+        sprache: "de",
+        betreff: "",
+        body_text: "",
+        body_html: null,
+        is_default: false,
+        erstellt_am: "",
+        updated_at: "",
+      });
+  };
+
+  const submitTemplate = async () => {
+    if (!tplEditor) return;
+    if (!tplEditor.betreff.trim() || !tplEditor.body_text.trim()) {
+      toast.error("Betreff und Text sind Pflicht");
+      return;
+    }
+    setTplSaving(true);
+    try {
+      const r = await saveTemplate({
+        data: {
+          id: tplEditor.id || undefined,
+          zielgruppe: tplEditor.zielgruppe,
+          sprache: tplEditor.sprache || "de",
+          betreff: tplEditor.betreff,
+          body_text: tplEditor.body_text,
+          body_html: tplEditor.body_html,
+          is_default: tplEditor.is_default,
+        },
+      });
+      if (r.ok) {
+        toast.success("Vorlage gespeichert");
+        setTplEditor(null);
+        void reload();
+      } else {
+        toast.error(r.error ?? "Vorlage konnte nicht gespeichert werden");
+      }
+    } finally {
+      setTplSaving(false);
+    }
+  };
+
+  const removeTemplate = async (id: string) => {
+    if (!confirm("Diese Vorlage löschen?")) return;
+    const r = await dropTemplate({ data: { id } });
+    if (r.ok) {
+      toast.success("Vorlage gelöscht");
+      void reload();
+    } else {
+      toast.error(r.error ?? "Löschen fehlgeschlagen");
+    }
+  };
+
   const landJobs = jobs.filter((j) => j.land === land);
 
   return (
