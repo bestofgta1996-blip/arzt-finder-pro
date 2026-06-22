@@ -558,6 +558,106 @@ export function MarketingPanel() {
         </CardContent>
       </Card>
 
+      {/* Gmail-Sync-Card */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="size-4" /> Gmail-Abgleich
+            {gmailState.connected ? (
+              <Badge variant="default" className="text-[10px]">verbunden</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">
+                <AlertTriangle className="size-3 mr-1" /> nicht verbunden
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Läuft parallel zum Outlook-Abgleich. Liest Gesendete &amp; Posteingang aus Gmail und aktualisiert Lead-Status automatisch. Optional werden zugehörige Mails mit dem Gmail-Label <code>Leads/&lt;Land&gt;/&lt;Fach&gt;</code> versehen.
+          </p>
+
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={applyLabels} onCheckedChange={(c) => setApplyLabels(c === true)} />
+              Mails mit Fachgebiet-Label versehen
+            </label>
+            <div className="flex-1" />
+            <Button onClick={handleEnsureGmailLabels} disabled={creatingLabels} variant="outline" size="sm">
+              {creatingLabels ? <Loader2 className="size-4 animate-spin mr-2" /> : <Tag className="size-4 mr-2" />}
+              Gmail-Labels anlegen
+            </Button>
+            <Button onClick={handleGmailSync} disabled={gmailSyncing} variant="secondary">
+              {gmailSyncing ? <Loader2 className="size-4 animate-spin mr-2" /> : <RefreshCw className="size-4 mr-2" />}
+              Jetzt mit Gmail abgleichen
+            </Button>
+          </div>
+
+          {(gmailState.lastRunAt || gmailState.labelCount > 0) && (
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t">
+              {gmailState.lastRunAt && (
+                <span>
+                  Letzter Sync: {new Date(gmailState.lastRunAt).toLocaleString("de-DE")}
+                </span>
+              )}
+              {gmailState.lastSummary && (
+                <>
+                  <span className="inline-flex items-center gap-1"><Send className="size-3" /> {gmailState.lastSummary.contacted} kontaktiert</span>
+                  <span className="inline-flex items-center gap-1"><Inbox className="size-3" /> {gmailState.lastSummary.replied} geantwortet</span>
+                  <span className="inline-flex items-center gap-1"><AlertTriangle className="size-3" /> {gmailState.lastSummary.bounced} Bounce</span>
+                </>
+              )}
+              <span className="inline-flex items-center gap-1"><Tag className="size-3" /> {gmailState.labelCount} Labels gemappt</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Anschreiben-Vorlagen */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileEdit className="size-4" /> Anschreiben-Vorlagen
+            <Badge variant="outline" className="text-[10px]">{templates.length}</Badge>
+            <div className="flex-1" />
+            <Button size="sm" variant="outline" onClick={() => openTemplateEditor(null)}>
+              <Plus className="size-4 mr-1" /> Neue Vorlage
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-2">
+            Platzhalter: <code>{"{name}"}</code>, <code>{"{stadt}"}</code>, <code>{"{fachgebiet}"}</code> – werden beim Erstellen eines Entwurfs automatisch ersetzt.
+          </p>
+          {templates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Noch keine Vorlagen. Lege oben eine neue an.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-auto">
+              {templates.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-3 rounded-md border bg-card p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="uppercase text-[10px]">{ZIELGRUPPEN_LABEL[t.zielgruppe] ?? t.zielgruppe}</Badge>
+                      <span className="font-medium text-sm truncate">{t.betreff}</span>
+                      {t.is_default ? <Badge variant="secondary" className="text-[10px]">Standard</Badge> : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.body_text}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" onClick={() => openTemplateEditor(t)} aria-label="Vorlage bearbeiten">
+                      <FileEdit className="size-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => removeTemplate(t.id)} aria-label="Vorlage löschen">
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Quellen: BRAK Anwaltsverzeichnis */}
       <Card>
         <CardHeader className="pb-3">
