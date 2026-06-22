@@ -236,7 +236,9 @@ export const scrapeBrak = createServerFn({ method: "POST" })
       }));
 
       if (leadsToInsert.length === 0) {
-        return { ok: true, found: 0, inserted: 0, skipped: 0, preview: [] };
+        const r = { ok: true, found: 0, inserted: 0, skipped: 0, preview: [] };
+        await logSearch(r);
+        return r;
       }
 
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -259,7 +261,7 @@ export const scrapeBrak = createServerFn({ method: "POST" })
         .select("id");
 
       if (error) {
-        return {
+        const r = {
           ok: false,
           error: error.message,
           found: leadsToInsert.length,
@@ -267,10 +269,12 @@ export const scrapeBrak = createServerFn({ method: "POST" })
           skipped: 0,
           preview: [],
         };
+        await logSearch(r);
+        return r;
       }
 
       const insertedCount = inserted?.length ?? 0;
-      return {
+      const result = {
         ok: true,
         found: leadsToInsert.length,
         inserted: insertedCount,
@@ -281,5 +285,45 @@ export const scrapeBrak = createServerFn({ method: "POST" })
           website: l.website,
         })),
       };
+      await logSearch(result);
+      return result;
     },
   );
+
+// ---- Suchverlauf --------------------------------------------------
+
+export interface DbSourceSearch {
+  id: string;
+  quelle: string;
+  fachgebiet: string;
+  ort: string | null;
+  land: string;
+  params: Record<string, unknown>;
+  found: number;
+  inserted: number;
+  skipped: number;
+  ok: boolean;
+  error: string | null;
+  erstellt_am: string;
+}
+
+export const listSourceSearches = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ ok: boolean; error?: string; items: DbSourceSearch[] }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("source_searches")
+      .select("*")
+      .order("erstellt_am", { ascending: false })
+      .limit(100);
+    if (error) return { ok: false, error: error.message, items: [] };
+    return { ok: true, items: (data ?? []) as unknown as DbSourceSearch[] };
+  });
+
+export const deleteSourceSearch = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("source_searches").delete().eq("id", data.id);
+    return error ? { ok: false, error: error.message } : { ok: true };
+  });
+
