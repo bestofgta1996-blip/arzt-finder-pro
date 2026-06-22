@@ -298,7 +298,7 @@ export interface DbSourceSearch {
   fachgebiet: string;
   ort: string | null;
   land: string;
-  params: Record<string, unknown>;
+  params: Record<string, string | number | boolean | null>;
   found: number;
   inserted: number;
   skipped: number;
