@@ -93,6 +93,7 @@ export function MarketingPanel() {
   const [brakLimit, setBrakLimit] = useState(10);
   const [brakLoading, setBrakLoading] = useState(false);
   const [brakLast, setBrakLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
+  const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
   const [land, setLand] = useState<LandCode>("DE");
   const [activeFach, setActiveFach] = useState<string>(ALL_FACH);
