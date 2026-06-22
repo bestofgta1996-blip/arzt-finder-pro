@@ -109,9 +109,36 @@ export const scrapeBrak = createServerFn({ method: "POST" })
       skipped: number;
       preview: Array<{ email: string; name: string | null; website: string | null }>;
     }> => {
+      const logSearch = async (result: {
+        ok: boolean;
+        error?: string;
+        found: number;
+        inserted: number;
+        skipped: number;
+      }) => {
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.from("source_searches").insert({
+            quelle: "brak",
+            fachgebiet: data.fachgebiet,
+            ort: data.ort,
+            land: "DE",
+            params: { limit: data.limit },
+            found: result.found,
+            inserted: result.inserted,
+            skipped: result.skipped,
+            ok: result.ok,
+            error: result.error ?? null,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+        } catch {
+          // logging soll nie den Hauptlauf blockieren
+        }
+      };
+
       const apiKey = process.env.FIRECRAWL_API_KEY;
       if (!apiKey) {
-        return {
+        const r = {
           ok: false,
           error: "FIRECRAWL_API_KEY ist nicht konfiguriert.",
           found: 0,
@@ -119,7 +146,10 @@ export const scrapeBrak = createServerFn({ method: "POST" })
           skipped: 0,
           preview: [],
         };
+        await logSearch(r);
+        return r;
       }
+
 
       // Zwei Suchen kombinieren: BRAK-Register + Kanzleiwebsites mit Impressum
       const queries = [
