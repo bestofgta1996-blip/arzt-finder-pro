@@ -85,6 +85,8 @@ export function MarketingPanel() {
   const ensureFolders = useServerFn(ensureOutlookFolders);
   const fetchOutlookState = useServerFn(getOutlookSyncState);
   const runBrak = useServerFn(scrapeBrak);
+  const fetchSourceSearches = useServerFn(listSourceSearches);
+  const dropSourceSearch = useServerFn(deleteSourceSearch);
 
   const [brakFach, setBrakFach] = useState<BrakFachgebiet>("Sozialrecht");
   const [brakOrt, setBrakOrt] = useState("");
