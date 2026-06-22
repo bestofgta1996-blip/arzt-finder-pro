@@ -14,6 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
+      email_templates: {
+        Row: {
+          betreff: string
+          body_html: string | null
+          body_text: string
+          erstellt_am: string
+          id: string
+          is_default: boolean
+          sprache: string
+          updated_at: string
+          zielgruppe: string
+        }
+        Insert: {
+          betreff: string
+          body_html?: string | null
+          body_text: string
+          erstellt_am?: string
+          id?: string
+          is_default?: boolean
+          sprache?: string
+          updated_at?: string
+          zielgruppe: string
+        }
+        Update: {
+          betreff?: string
+          body_html?: string | null
+          body_text?: string
+          erstellt_am?: string
+          id?: string
+          is_default?: boolean
+          sprache?: string
+          updated_at?: string
+          zielgruppe?: string
+        }
+        Relationships: []
+      }
+      gmail_labels: {
+        Row: {
+          created_at: string
+          fachgebiet: string
+          id: string
+          label_id: string
+          label_name: string
+          land: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          fachgebiet: string
+          id?: string
+          label_id: string
+          label_name: string
+          land: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          fachgebiet?: string
+          id?: string
+          label_id?: string
+          label_name?: string
+          land?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gmail_sync_state: {
+        Row: {
+          id: number
+          last_bounce_check_at: string | null
+          last_full_sync_at: string | null
+          last_inbox_check_at: string | null
+          last_sent_check_at: string | null
+          last_summary: Json | null
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          last_bounce_check_at?: string | null
+          last_full_sync_at?: string | null
+          last_inbox_check_at?: string | null
+          last_sent_check_at?: string | null
+          last_summary?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          last_bounce_check_at?: string | null
+          last_full_sync_at?: string | null
+          last_inbox_check_at?: string | null
+          last_sent_check_at?: string | null
+          last_summary?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           bounced_at: string | null
@@ -21,6 +117,10 @@ export type Database = {
           erstellt_am: string
           fachgebiet: string | null
           gerichtsgutachter: boolean
+          gmail_draft_id: string | null
+          gmail_label_id: string | null
+          gmail_message_id: string | null
+          gmail_thread_id: string | null
           id: string
           land: string
           last_contacted_at: string | null
@@ -46,6 +146,10 @@ export type Database = {
           erstellt_am?: string
           fachgebiet?: string | null
           gerichtsgutachter?: boolean
+          gmail_draft_id?: string | null
+          gmail_label_id?: string | null
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
           id?: string
           land: string
           last_contacted_at?: string | null
@@ -71,6 +175,10 @@ export type Database = {
           erstellt_am?: string
           fachgebiet?: string | null
           gerichtsgutachter?: boolean
+          gmail_draft_id?: string | null
+          gmail_label_id?: string | null
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
           id?: string
           land?: string
           last_contacted_at?: string | null
