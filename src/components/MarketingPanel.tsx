@@ -33,9 +33,29 @@ import {
   type BrakFachgebiet,
   type DbSourceSearch,
 } from "@/lib/sources.functions";
+import {
+  scrapeBrak,
+  BRAK_FACHGEBIETE,
+  listSourceSearches,
+  deleteSourceSearch,
+  type BrakFachgebiet,
+  type DbSourceSearch,
+} from "@/lib/sources.functions";
+import {
+  getGmailSyncState,
+  syncGmailAll,
+  ensureGmailLabels,
+  createGmailDraft,
+  listEmailTemplates,
+  upsertEmailTemplate,
+  deleteEmailTemplate,
+  type DbEmailTemplate,
+} from "@/lib/gmail.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save, FileEdit, Tag, MailPlus } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
