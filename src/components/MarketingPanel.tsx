@@ -33,9 +33,21 @@ import {
   type BrakFachgebiet,
   type DbSourceSearch,
 } from "@/lib/sources.functions";
+import {
+  getGmailSyncState,
+  syncGmailAll,
+  ensureGmailLabels,
+  createGmailDraft,
+  listEmailTemplates,
+  upsertEmailTemplate,
+  deleteEmailTemplate,
+  type DbEmailTemplate,
+} from "@/lib/gmail.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save, FileEdit, Tag, MailPlus } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
@@ -74,6 +86,13 @@ interface OutlookState {
   folderCount: number;
 }
 
+interface GmailState {
+  connected: boolean;
+  lastRunAt: string | null;
+  lastSummary: { contacted: number; replied: number; bounced: number; labeled: number } | null;
+  labelCount: number;
+}
+
 export function MarketingPanel() {
   const fetchLeads = useServerFn(listLeads);
   const fetchJobs = useServerFn(listSearchJobs);
@@ -87,6 +106,13 @@ export function MarketingPanel() {
   const runBrak = useServerFn(scrapeBrak);
   const fetchSourceSearches = useServerFn(listSourceSearches);
   const dropSourceSearch = useServerFn(deleteSourceSearch);
+  const fetchGmailStateFn = useServerFn(getGmailSyncState);
+  const runGmailSync = useServerFn(syncGmailAll);
+  const runEnsureGmailLabels = useServerFn(ensureGmailLabels);
+  const runCreateDraft = useServerFn(createGmailDraft);
+  const fetchTemplates = useServerFn(listEmailTemplates);
+  const saveTemplate = useServerFn(upsertEmailTemplate);
+  const dropTemplate = useServerFn(deleteEmailTemplate);
 
   const [brakFach, setBrakFach] = useState<BrakFachgebiet>("Sozialrecht");
   const [brakOrt, setBrakOrt] = useState("");
@@ -109,6 +135,26 @@ export function MarketingPanel() {
     lastSummary: null,
     folderCount: 0,
   });
+  const [gmailState, setGmailState] = useState<GmailState>({
+    connected: false,
+    lastRunAt: null,
+    lastSummary: null,
+    labelCount: 0,
+  });
+  const [gmailSyncing, setGmailSyncing] = useState(false);
+  const [creatingLabels, setCreatingLabels] = useState(false);
+  const [applyLabels, setApplyLabels] = useState(false);
+
+  const [templates, setTemplates] = useState<DbEmailTemplate[]>([]);
+  const [tplEditor, setTplEditor] = useState<DbEmailTemplate | null>(null);
+  const [tplSaving, setTplSaving] = useState(false);
+
+  // Draft dialog state
+  const [draftLead, setDraftLead] = useState<DbLead | null>(null);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [draftTemplateId, setDraftTemplateId] = useState<string>("");
+  const [draftSaving, setDraftSaving] = useState(false);
 
   // New job form
   const [newJob, setNewJob] = useState({
@@ -121,11 +167,13 @@ export function MarketingPanel() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [l, j, o, s] = await Promise.all([
+      const [l, j, o, s, g, t] = await Promise.all([
         fetchLeads({ data: {} }),
         fetchJobs(),
         fetchOutlookState(),
         fetchSourceSearches(),
+        fetchGmailStateFn(),
+        fetchTemplates(),
       ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
@@ -138,6 +186,15 @@ export function MarketingPanel() {
         });
       }
       if (s.ok) setSourceSearches(s.items);
+      if (g.ok) {
+        setGmailState({
+          connected: g.connected,
+          lastRunAt: g.lastRunAt,
+          lastSummary: g.lastSummary,
+          labelCount: g.labelCount,
+        });
+      }
+      if (t.ok) setTemplates(t.items);
     } finally {
       setLoading(false);
     }
@@ -304,6 +361,144 @@ export function MarketingPanel() {
     }
   };
 
+  const handleGmailSync = async () => {
+    setGmailSyncing(true);
+    try {
+      const r = await runGmailSync({ data: { applyLabels } });
+      if (r.ok) {
+        const s = r.summary;
+        toast.success(
+          `Gmail-Abgleich fertig: ${s.contacted} kontaktiert · ${s.replied} geantwortet · ${s.bounced} Bounce${applyLabels ? ` · ${s.labeled} gelabelt` : ""}`,
+        );
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Gmail-Abgleich fehlgeschlagen");
+      }
+    } finally {
+      setGmailSyncing(false);
+    }
+  };
+
+  const handleEnsureGmailLabels = async () => {
+    setCreatingLabels(true);
+    try {
+      const r = await runEnsureGmailLabels();
+      if (r.ok) {
+        toast.success(`Gmail-Labels aktualisiert: ${r.created} neu, ${r.total} insgesamt`);
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Label-Anlage fehlgeschlagen");
+      }
+    } finally {
+      setCreatingLabels(false);
+    }
+  };
+
+  const openDraftDialog = (lead: DbLead) => {
+    setDraftLead(lead);
+    const tpl =
+      templates.find(
+        (t) => t.zielgruppe === (lead.zielgruppe ?? "") && t.is_default,
+      ) ?? templates.find((t) => t.zielgruppe === (lead.zielgruppe ?? "")) ?? null;
+    setDraftTemplateId(tpl?.id ?? "");
+    setDraftSubject(tpl?.betreff ?? "");
+    setDraftBody(tpl?.body_text ?? "");
+  };
+
+  const onPickTemplate = (id: string) => {
+    setDraftTemplateId(id);
+    const tpl = templates.find((t) => t.id === id);
+    if (tpl) {
+      setDraftSubject(tpl.betreff);
+      setDraftBody(tpl.body_text);
+    }
+  };
+
+  const submitDraft = async () => {
+    if (!draftLead) return;
+    if (!draftSubject.trim() || !draftBody.trim()) {
+      toast.error("Betreff und Text dürfen nicht leer sein");
+      return;
+    }
+    setDraftSaving(true);
+    try {
+      const r = await runCreateDraft({
+        data: {
+          leadId: draftLead.id,
+          subject: draftSubject,
+          bodyText: draftBody,
+        },
+      });
+      if (r.ok) {
+        toast.success(`Entwurf in Gmail angelegt – jetzt prüfen und senden`);
+        setDraftLead(null);
+        void reload();
+      } else {
+        toast.error(r.reason ?? "Entwurf konnte nicht angelegt werden");
+      }
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  const openTemplateEditor = (tpl: DbEmailTemplate | null) => {
+    if (tpl) setTplEditor(tpl);
+    else
+      setTplEditor({
+        id: "",
+        zielgruppe: "anwaelte",
+        sprache: "de",
+        betreff: "",
+        body_text: "",
+        body_html: null,
+        is_default: false,
+        erstellt_am: "",
+        updated_at: "",
+      });
+  };
+
+  const submitTemplate = async () => {
+    if (!tplEditor) return;
+    if (!tplEditor.betreff.trim() || !tplEditor.body_text.trim()) {
+      toast.error("Betreff und Text sind Pflicht");
+      return;
+    }
+    setTplSaving(true);
+    try {
+      const r = await saveTemplate({
+        data: {
+          id: tplEditor.id || undefined,
+          zielgruppe: tplEditor.zielgruppe,
+          sprache: tplEditor.sprache || "de",
+          betreff: tplEditor.betreff,
+          body_text: tplEditor.body_text,
+          body_html: tplEditor.body_html,
+          is_default: tplEditor.is_default,
+        },
+      });
+      if (r.ok) {
+        toast.success("Vorlage gespeichert");
+        setTplEditor(null);
+        void reload();
+      } else {
+        toast.error(r.error ?? "Vorlage konnte nicht gespeichert werden");
+      }
+    } finally {
+      setTplSaving(false);
+    }
+  };
+
+  const removeTemplate = async (id: string) => {
+    if (!confirm("Diese Vorlage löschen?")) return;
+    const r = await dropTemplate({ data: { id } });
+    if (r.ok) {
+      toast.success("Vorlage gelöscht");
+      void reload();
+    } else {
+      toast.error(r.error ?? "Löschen fehlgeschlagen");
+    }
+  };
+
   const landJobs = jobs.filter((j) => j.land === land);
 
   return (
@@ -358,6 +553,106 @@ export function MarketingPanel() {
                 </>
               )}
               <span className="inline-flex items-center gap-1"><Folder className="size-3" /> {outlookState.folderCount} Fachgebiet-Ordner gemappt</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Gmail-Sync-Card */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="size-4" /> Gmail-Abgleich
+            {gmailState.connected ? (
+              <Badge variant="default" className="text-[10px]">verbunden</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">
+                <AlertTriangle className="size-3 mr-1" /> nicht verbunden
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Läuft parallel zum Outlook-Abgleich. Liest Gesendete &amp; Posteingang aus Gmail und aktualisiert Lead-Status automatisch. Optional werden zugehörige Mails mit dem Gmail-Label <code>Leads/&lt;Land&gt;/&lt;Fach&gt;</code> versehen.
+          </p>
+
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={applyLabels} onCheckedChange={(c) => setApplyLabels(c === true)} />
+              Mails mit Fachgebiet-Label versehen
+            </label>
+            <div className="flex-1" />
+            <Button onClick={handleEnsureGmailLabels} disabled={creatingLabels} variant="outline" size="sm">
+              {creatingLabels ? <Loader2 className="size-4 animate-spin mr-2" /> : <Tag className="size-4 mr-2" />}
+              Gmail-Labels anlegen
+            </Button>
+            <Button onClick={handleGmailSync} disabled={gmailSyncing} variant="secondary">
+              {gmailSyncing ? <Loader2 className="size-4 animate-spin mr-2" /> : <RefreshCw className="size-4 mr-2" />}
+              Jetzt mit Gmail abgleichen
+            </Button>
+          </div>
+
+          {(gmailState.lastRunAt || gmailState.labelCount > 0) && (
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t">
+              {gmailState.lastRunAt && (
+                <span>
+                  Letzter Sync: {new Date(gmailState.lastRunAt).toLocaleString("de-DE")}
+                </span>
+              )}
+              {gmailState.lastSummary && (
+                <>
+                  <span className="inline-flex items-center gap-1"><Send className="size-3" /> {gmailState.lastSummary.contacted} kontaktiert</span>
+                  <span className="inline-flex items-center gap-1"><Inbox className="size-3" /> {gmailState.lastSummary.replied} geantwortet</span>
+                  <span className="inline-flex items-center gap-1"><AlertTriangle className="size-3" /> {gmailState.lastSummary.bounced} Bounce</span>
+                </>
+              )}
+              <span className="inline-flex items-center gap-1"><Tag className="size-3" /> {gmailState.labelCount} Labels gemappt</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Anschreiben-Vorlagen */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileEdit className="size-4" /> Anschreiben-Vorlagen
+            <Badge variant="outline" className="text-[10px]">{templates.length}</Badge>
+            <div className="flex-1" />
+            <Button size="sm" variant="outline" onClick={() => openTemplateEditor(null)}>
+              <Plus className="size-4 mr-1" /> Neue Vorlage
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-2">
+            Platzhalter: <code>{"{name}"}</code>, <code>{"{stadt}"}</code>, <code>{"{fachgebiet}"}</code> – werden beim Erstellen eines Entwurfs automatisch ersetzt.
+          </p>
+          {templates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Noch keine Vorlagen. Lege oben eine neue an.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-auto">
+              {templates.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-3 rounded-md border bg-card p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="uppercase text-[10px]">{ZIELGRUPPEN_LABEL[t.zielgruppe] ?? t.zielgruppe}</Badge>
+                      <span className="font-medium text-sm truncate">{t.betreff}</span>
+                      {t.is_default ? <Badge variant="secondary" className="text-[10px]">Standard</Badge> : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.body_text}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" onClick={() => openTemplateEditor(t)} aria-label="Vorlage bearbeiten">
+                      <FileEdit className="size-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => removeTemplate(t.id)} aria-label="Vorlage löschen">
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
@@ -815,6 +1110,16 @@ export function MarketingPanel() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openDraftDialog(lead)}
+                              disabled={!gmailState.connected}
+                              title={gmailState.connected ? "Entwurf in Gmail anlegen" : "Gmail ist nicht verbunden"}
+                              aria-label="Entwurf in Gmail anlegen"
+                            >
+                              <MailPlus className="size-4" />
+                            </Button>
                             <a
                               href={`mailto:${lead.email}`}
                               className="inline-flex items-center justify-center size-7 rounded hover:bg-accent"
@@ -836,6 +1141,132 @@ export function MarketingPanel() {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Draft-Dialog */}
+      <Dialog open={!!draftLead} onOpenChange={(o) => !o && setDraftLead(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Entwurf in Gmail anlegen</DialogTitle>
+            <DialogDescription>
+              {draftLead ? (
+                <>
+                  Empfänger: <b>{draftLead.name ?? draftLead.email}</b> &lt;{draftLead.email}&gt;
+                  {draftLead.fachgebiet ? <> · {draftLead.fachgebiet}</> : null}
+                  {draftLead.stadt ? <> · {draftLead.stadt}</> : null}
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Vorlage</Label>
+              <Select value={draftTemplateId} onValueChange={onPickTemplate}>
+                <SelectTrigger><SelectValue placeholder="Vorlage wählen…" /></SelectTrigger>
+                <SelectContent>
+                  {templates
+                    .filter((t) => !draftLead?.zielgruppe || t.zielgruppe === draftLead.zielgruppe)
+                    .map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {ZIELGRUPPEN_LABEL[t.zielgruppe] ?? t.zielgruppe} – {t.betreff}
+                      </SelectItem>
+                    ))}
+                  {templates.length === 0 && (
+                    <SelectItem value="__none" disabled>Keine Vorlagen vorhanden</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Betreff</Label>
+              <Input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Text</Label>
+              <Textarea
+                value={draftBody}
+                onChange={(e) => setDraftBody(e.target.value)}
+                rows={12}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Platzhalter <code>{"{name}"}</code>, <code>{"{stadt}"}</code>, <code>{"{fachgebiet}"}</code> werden automatisch ersetzt.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDraftLead(null)} disabled={draftSaving}>
+              Abbrechen
+            </Button>
+            <Button onClick={submitDraft} disabled={draftSaving}>
+              {draftSaving ? <Loader2 className="size-4 animate-spin mr-2" /> : <MailPlus className="size-4 mr-2" />}
+              Entwurf anlegen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Template-Editor */}
+      <Dialog open={!!tplEditor} onOpenChange={(o) => !o && setTplEditor(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{tplEditor?.id ? "Vorlage bearbeiten" : "Neue Vorlage"}</DialogTitle>
+          </DialogHeader>
+          {tplEditor && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Zielgruppe</Label>
+                  <Select
+                    value={tplEditor.zielgruppe}
+                    onValueChange={(v) => setTplEditor({ ...tplEditor, zielgruppe: v })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(ZIELGRUPPEN_LABEL).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={tplEditor.is_default}
+                      onCheckedChange={(c) => setTplEditor({ ...tplEditor, is_default: c === true })}
+                    />
+                    Standard-Vorlage für diese Zielgruppe
+                  </label>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Betreff</Label>
+                <Input
+                  value={tplEditor.betreff}
+                  onChange={(e) => setTplEditor({ ...tplEditor, betreff: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Text</Label>
+                <Textarea
+                  value={tplEditor.body_text}
+                  onChange={(e) => setTplEditor({ ...tplEditor, body_text: e.target.value })}
+                  rows={12}
+                  className="font-mono text-xs"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTplEditor(null)} disabled={tplSaving}>
+              Abbrechen
+            </Button>
+            <Button onClick={submitTemplate} disabled={tplSaving}>
+              {tplSaving ? <Loader2 className="size-4 animate-spin mr-2" /> : <Save className="size-4 mr-2" />}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
