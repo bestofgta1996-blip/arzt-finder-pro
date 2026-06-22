@@ -25,10 +25,17 @@ import {
   type LandCode,
   type LeadStatusDb,
 } from "@/lib/marketing.functions";
-import { scrapeBrak, BRAK_FACHGEBIETE, type BrakFachgebiet } from "@/lib/sources.functions";
+import {
+  scrapeBrak,
+  BRAK_FACHGEBIETE,
+  listSourceSearches,
+  deleteSourceSearch,
+  type BrakFachgebiet,
+  type DbSourceSearch,
+} from "@/lib/sources.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download } from "lucide-react";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
@@ -78,12 +85,15 @@ export function MarketingPanel() {
   const ensureFolders = useServerFn(ensureOutlookFolders);
   const fetchOutlookState = useServerFn(getOutlookSyncState);
   const runBrak = useServerFn(scrapeBrak);
+  const fetchSourceSearches = useServerFn(listSourceSearches);
+  const dropSourceSearch = useServerFn(deleteSourceSearch);
 
   const [brakFach, setBrakFach] = useState<BrakFachgebiet>("Sozialrecht");
   const [brakOrt, setBrakOrt] = useState("");
   const [brakLimit, setBrakLimit] = useState(10);
   const [brakLoading, setBrakLoading] = useState(false);
   const [brakLast, setBrakLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
+  const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
   const [land, setLand] = useState<LandCode>("DE");
   const [activeFach, setActiveFach] = useState<string>(ALL_FACH);
@@ -111,10 +121,11 @@ export function MarketingPanel() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [l, j, o] = await Promise.all([
+      const [l, j, o, s] = await Promise.all([
         fetchLeads({ data: {} }),
         fetchJobs(),
         fetchOutlookState(),
+        fetchSourceSearches(),
       ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
@@ -126,6 +137,7 @@ export function MarketingPanel() {
           folderCount: o.folderCount,
         });
       }
+      if (s.ok) setSourceSearches(s.items);
     } finally {
       setLoading(false);
     }
@@ -406,38 +418,145 @@ export function MarketingPanel() {
                 <span>Quelle: rechtsanwaltsregister.org &amp; öffentliche Kanzleiwebsites</span>
               )}
             </div>
-            <Button
-              onClick={async () => {
-                if (!brakOrt.trim()) {
-                  toast.error("Bitte einen Ort angeben");
-                  return;
-                }
-                setBrakLoading(true);
-                try {
-                  const r = await runBrak({
-                    data: { fachgebiet: brakFach, ort: brakOrt.trim(), limit: brakLimit },
-                  });
-                  if (!r.ok) {
-                    toast.error(r.error ?? "Suche fehlgeschlagen");
-                  } else {
-                    setBrakLast({ found: r.found, inserted: r.inserted, skipped: r.skipped });
-                    toast.success(`${r.inserted} neue Anwaltskontakte importiert (${r.found} gefunden)`);
-                    await reload();
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!brakOrt.trim()) {
+                    toast.error("Bitte zuerst einen Ort angeben");
+                    return;
                   }
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : "Fehler bei BRAK-Suche");
-                } finally {
-                  setBrakLoading(false);
-                }
-              }}
-              disabled={brakLoading}
-            >
-              {brakLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
-              Suchen &amp; importieren
-            </Button>
+                  const res = await saveJob({
+                    data: {
+                      land: "DE",
+                      fachgebiet: brakFach,
+                      ort: brakOrt.trim(),
+                      zielgruppen: ["anwaelte"],
+                      gerichtsgutachter: false,
+                      aktiv: true,
+                    },
+                  });
+                  if (res.ok) {
+                    toast.success("Als Suchprofil gespeichert – läuft jetzt fortlaufend");
+                    void reload();
+                  } else {
+                    toast.error(res.error ?? "Konnte Profil nicht speichern");
+                  }
+                }}
+                disabled={brakLoading}
+              >
+                <Save className="size-4 mr-2" /> Als Profil speichern
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!brakOrt.trim()) {
+                    toast.error("Bitte einen Ort angeben");
+                    return;
+                  }
+                  setBrakLoading(true);
+                  try {
+                    const r = await runBrak({
+                      data: { fachgebiet: brakFach, ort: brakOrt.trim(), limit: brakLimit },
+                    });
+                    if (!r.ok) {
+                      toast.error(r.error ?? "Suche fehlgeschlagen");
+                    } else {
+                      setBrakLast({ found: r.found, inserted: r.inserted, skipped: r.skipped });
+                      toast.success(`${r.inserted} neue Anwaltskontakte importiert (${r.found} gefunden)`);
+                      await reload();
+                    }
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Fehler bei BRAK-Suche");
+                  } finally {
+                    setBrakLoading(false);
+                  }
+                }}
+                disabled={brakLoading}
+              >
+                {brakLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
+                Suchen &amp; importieren
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Suchverlauf */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="size-4" /> Suchverlauf
+            <Badge variant="outline" className="text-[10px]">{sourceSearches.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sourceSearches.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Noch keine Suchen protokolliert. Jeder Quellen-Lauf erscheint hier automatisch.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-auto">
+              {sourceSearches.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 rounded-md border bg-card p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="uppercase text-[10px]">{s.quelle}</Badge>
+                      <span className="font-medium text-sm">{s.fachgebiet}</span>
+                      {s.ort ? <span className="text-sm text-muted-foreground">· {s.ort}</span> : null}
+                      {!s.ok ? (
+                        <Badge variant="destructive" className="text-[10px]">Fehler</Badge>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {new Date(s.erstellt_am).toLocaleString("de-DE")} ·{" "}
+                      {s.found} Treffer · <b>{s.inserted}</b> neu · {s.skipped} Duplikate
+                      {s.error ? <span className="text-destructive"> · {s.error}</span> : null}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {s.quelle === "brak" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const fg = BRAK_FACHGEBIETE.find((f) => f === s.fachgebiet);
+                          if (fg) setBrakFach(fg);
+                          if (s.ort) setBrakOrt(s.ort);
+                          toast.info('Suchparameter übernommen – auf "Suchen & importieren" klicken');
+                          if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        aria-label="Suche wiederholen"
+                      >
+                        <RefreshCw className="size-4" />
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        const r = await dropSourceSearch({ data: { id: s.id } });
+                        if (r.ok) {
+                          setSourceSearches((prev) => prev.filter((x) => x.id !== s.id));
+                        } else {
+                          toast.error(r.error ?? "Löschen fehlgeschlagen");
+                        }
+                      }}
+                      aria-label="Verlaufseintrag löschen"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
 
       <Tabs value={land} onValueChange={(v) => setLand(v as LandCode)}>
         <TabsList className="flex-wrap h-auto">

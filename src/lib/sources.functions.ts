@@ -109,9 +109,36 @@ export const scrapeBrak = createServerFn({ method: "POST" })
       skipped: number;
       preview: Array<{ email: string; name: string | null; website: string | null }>;
     }> => {
+      const logSearch = async (result: {
+        ok: boolean;
+        error?: string;
+        found: number;
+        inserted: number;
+        skipped: number;
+      }) => {
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.from("source_searches").insert({
+            quelle: "brak",
+            fachgebiet: data.fachgebiet,
+            ort: data.ort,
+            land: "DE",
+            params: { limit: data.limit },
+            found: result.found,
+            inserted: result.inserted,
+            skipped: result.skipped,
+            ok: result.ok,
+            error: result.error ?? null,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+        } catch {
+          // logging soll nie den Hauptlauf blockieren
+        }
+      };
+
       const apiKey = process.env.FIRECRAWL_API_KEY;
       if (!apiKey) {
-        return {
+        const r = {
           ok: false,
           error: "FIRECRAWL_API_KEY ist nicht konfiguriert.",
           found: 0,
@@ -119,7 +146,10 @@ export const scrapeBrak = createServerFn({ method: "POST" })
           skipped: 0,
           preview: [],
         };
+        await logSearch(r);
+        return r;
       }
+
 
       // Zwei Suchen kombinieren: BRAK-Register + Kanzleiwebsites mit Impressum
       const queries = [
@@ -206,7 +236,9 @@ export const scrapeBrak = createServerFn({ method: "POST" })
       }));
 
       if (leadsToInsert.length === 0) {
-        return { ok: true, found: 0, inserted: 0, skipped: 0, preview: [] };
+        const r = { ok: true, found: 0, inserted: 0, skipped: 0, preview: [] };
+        await logSearch(r);
+        return r;
       }
 
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -229,7 +261,7 @@ export const scrapeBrak = createServerFn({ method: "POST" })
         .select("id");
 
       if (error) {
-        return {
+        const r = {
           ok: false,
           error: error.message,
           found: leadsToInsert.length,
@@ -237,10 +269,12 @@ export const scrapeBrak = createServerFn({ method: "POST" })
           skipped: 0,
           preview: [],
         };
+        await logSearch(r);
+        return r;
       }
 
       const insertedCount = inserted?.length ?? 0;
-      return {
+      const result = {
         ok: true,
         found: leadsToInsert.length,
         inserted: insertedCount,
@@ -251,5 +285,45 @@ export const scrapeBrak = createServerFn({ method: "POST" })
           website: l.website,
         })),
       };
+      await logSearch(result);
+      return result;
     },
   );
+
+// ---- Suchverlauf --------------------------------------------------
+
+export interface DbSourceSearch {
+  id: string;
+  quelle: string;
+  fachgebiet: string;
+  ort: string | null;
+  land: string;
+  params: Record<string, string | number | boolean | null>;
+  found: number;
+  inserted: number;
+  skipped: number;
+  ok: boolean;
+  error: string | null;
+  erstellt_am: string;
+}
+
+export const listSourceSearches = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ ok: boolean; error?: string; items: DbSourceSearch[] }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("source_searches")
+      .select("*")
+      .order("erstellt_am", { ascending: false })
+      .limit(100);
+    if (error) return { ok: false, error: error.message, items: [] };
+    return { ok: true, items: (data ?? []) as unknown as DbSourceSearch[] };
+  });
+
+export const deleteSourceSearch = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("source_searches").delete().eq("id", data.id);
+    return error ? { ok: false, error: error.message } : { ok: true };
+  });
+

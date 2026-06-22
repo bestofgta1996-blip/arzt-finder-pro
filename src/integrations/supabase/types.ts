@@ -221,6 +221,51 @@ export type Database = {
         }
         Relationships: []
       }
+      source_searches: {
+        Row: {
+          error: string | null
+          erstellt_am: string
+          fachgebiet: string
+          found: number
+          id: string
+          inserted: number
+          land: string
+          ok: boolean
+          ort: string | null
+          params: Json
+          quelle: string
+          skipped: number
+        }
+        Insert: {
+          error?: string | null
+          erstellt_am?: string
+          fachgebiet: string
+          found?: number
+          id?: string
+          inserted?: number
+          land?: string
+          ok?: boolean
+          ort?: string | null
+          params?: Json
+          quelle: string
+          skipped?: number
+        }
+        Update: {
+          error?: string | null
+          erstellt_am?: string
+          fachgebiet?: string
+          found?: number
+          id?: string
+          inserted?: number
+          land?: string
+          ok?: boolean
+          ort?: string | null
+          params?: Json
+          quelle?: string
+          skipped?: number
+        }
+        Relationships: []
+      }
       tender_portals: {
         Row: {
           aktiv: boolean
