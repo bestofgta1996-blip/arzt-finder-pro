@@ -121,10 +121,11 @@ export function MarketingPanel() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [l, j, o] = await Promise.all([
+      const [l, j, o, s] = await Promise.all([
         fetchLeads({ data: {} }),
         fetchJobs(),
         fetchOutlookState(),
+        fetchSourceSearches(),
       ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
@@ -136,6 +137,7 @@ export function MarketingPanel() {
           folderCount: o.folderCount,
         });
       }
+      if (s.ok) setSourceSearches(s.items);
     } finally {
       setLoading(false);
     }
