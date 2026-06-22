@@ -1,87 +1,52 @@
-## Ziel
-Suche wird **rein manuell** (kein Cron mehr). Marketinglisten aktualisieren sich automatisch via **Microsoft Outlook-Abgleich** (gesendet / geantwortet / Bounce). Leads werden zusätzlich nach **Fachrichtung** organisiert – als virtuelle Ordner im UI **und** als echte Mail-Ordner im verbundenen Outlook.
+## Gmail-Integration (parallel zu Outlook)
 
----
+Gmail-Konto verbinden, automatische E-Mail-Entwürfe pro Lead anlegen und Postfach-Abgleich für Status-Updates – ergänzend zum bestehenden Outlook-Abgleich.
 
-## 1. Cron deaktivieren
-- pg_cron-Jobs `search-tick` und `tenders-tick` entfernen (per insert-Tool `cron.unschedule(...)`)
-- Bestehende Suchfunktionen (`runSearchSlice`, `runTenderSlice`) bleiben, werden aber nur noch per Button im UI getriggert
-- UI: Toggle "Automatische Dauersuche" entfernt, statt dessen ein klarer **„Suche starten"-Button** pro Quelle (Firecrawl / TED) mit Fortschrittsanzeige
+### 1. Gmail-Connector verknüpfen
 
----
+Den bestehenden Workspace-Connector „David's Gmail" mit dem Projekt verknüpfen, damit Gmail-API-Calls möglich werden. Erfordert deine Bestätigung im Dialog – kein neuer API-Key nötig.
 
-## 2. Microsoft Outlook anbinden
-- **Connector**: `microsoft_outlook` (ein zentrales Postfach, OAuth durch dich) – über Lovable Connector Gateway
-- Neue Server-Functions in `src/lib/outlook.functions.ts`:
-  - `syncOutlookSent` – holt gesendete Mails der letzten X Tage aus `/me/mailFolders/sentitems/messages`
-  - `syncOutlookInbox` – holt Inbox-Antworten (Match per `inReplyTo` / Betreff / Absender)
-  - `syncOutlookBounces` – erkennt MAILER-DAEMON-Mails / Failure Notifications
+### 2. Neue Karte „Gmail-Abgleich" im Marketing-Panel
 
----
+Direkt neben der vorhandenen Outlook-Karte, gleicher Aufbau für Wiedererkennung:
+- Status-Anzeige (verbunden / nicht verbunden, letzter Abgleich, letzte Zusammenfassung)
+- Button **Jetzt abgleichen** – scannt gesendete Mails, Posteingang und Bounces, aktualisiert Lead-Status (neu → angeschrieben → geantwortet / bounce)
+- Button **Labels anlegen** – legt pro Fachgebiet ein Gmail-Label an (Pendant zu den Outlook-Ordnern)
+- Optional Checkbox **Eingegangene Antworten labeln** – versieht Antworten von bekannten Leads mit dem passenden Fachgebiet-Label
+- Beide Abgleiche (Outlook + Gmail) laufen unabhängig, Lead-Status zeigt jeweils das aktuellere Ergebnis
 
-## 3. Schema-Erweiterung `leads`
-Migration ergänzt:
-- `status` TEXT (`neu`, `kontaktiert`, `geantwortet`, `ungültig`, `bounce`) – Default `neu`
-- `last_contacted_at` TIMESTAMPTZ
-- `last_replied_at` TIMESTAMPTZ
-- `outlook_message_id` TEXT – letzte Mail-Referenz
-- Index auf `lower(email)` für schnelles Matching
+### 3. Button „Entwurf in Gmail anlegen" pro Lead
 
-Neue Tabelle `outlook_sync_state`:
-- `last_sent_check_at`, `last_inbox_check_at`, `last_bounce_check_at`
-- Damit pro Sync nur Delta geholt wird (`$filter=receivedDateTime gt ...`)
+In der Lead-Liste neben den vorhandenen Aktionen (Status setzen, löschen):
+- Neuer Button **Entwurf anlegen** (Gmail-Icon)
+- Öffnet kleinen Dialog mit Vorlagen-Auswahl (Anwälte / Gutachter / Kliniken / Versicherungen) und befüllbarem Betreff/Text – Platzhalter `{name}`, `{stadt}`, `{fachgebiet}` werden automatisch eingesetzt
+- Beim Speichern: Entwurf landet in deinem Gmail-Ordner „Entwürfe"; du prüfst und sendest manuell
+- Lead-Status bleibt auf „neu", bis du tatsächlich sendest (der Abgleich erkennt das später automatisch)
 
----
+### 4. Vorlagen-Verwaltung (klein)
 
-## 4. Matching-Logik
-Im Sync wird pro Outlook-Mail geprüft:
-- **Gesendet**: jede `toRecipients[].emailAddress.address` → Lead mit gleicher E-Mail finden → Status `kontaktiert`, `last_contacted_at` setzen
-- **Antwort** (Inbox): Absender-Adresse → Lead finden → Status `geantwortet`, `last_replied_at` setzen
-- **Bounce**: Failure-Notification parsen (Original-Empfänger aus Body / Header) → Lead → Status `bounce`
+Eine simple Vorlagen-Tabelle, damit Anschreiben nicht jedes Mal neu getippt werden müssen:
+- Pro Zielgruppe (Anwälte, Gutachter, …) je ein Standard-Template (Betreff + HTML/Text)
+- Bearbeitbar über eigene kleine Karte „Anschreiben-Vorlagen" unter den Such-Profilen
+- Werden beim Entwurf-Anlegen vorgeschlagen, lassen sich pro Lead noch anpassen
 
-Statushierarchie: `geantwortet` > `bounce` > `kontaktiert` > `neu` (höherer Status wird nicht zurückgestuft)
+### Technische Details
 
----
+- **Datenmodell:**
+  - Neue Tabelle `email_templates` (zielgruppe, sprache, betreff, body_html, body_text)
+  - Erweiterung `outlook_sync_state` → generisch zu `mailbox_sync_state` mit `provider`-Spalte (`outlook` / `gmail`); bestehende Daten migrieren. Alternativ separate Tabelle `gmail_sync_state` (weniger Refactor, doppelte Struktur) – ich nehme den Refactor, sauberer.
+  - Leads bekommen optional `gmail_draft_id` und `gmail_thread_id` (für Wiedererkennung beim Abgleich)
+- **Server-Funktionen** in `src/lib/gmail.functions.ts`:
+  - `getGmailSyncState`, `syncGmailAll({ moveToLabels })`, `ensureGmailLabels`
+  - `createGmailDraft({ leadId, subject, bodyHtml })`
+  - Alle Calls über Connector-Gateway `https://connector-gateway.lovable.dev/google_mail/gmail/v1`, Auth via `LOVABLE_API_KEY` + `GOOGLE_MAIL_API_KEY`
+- **Scopes:** der Connector braucht `gmail.compose` (Entwürfe), `gmail.readonly` (Abgleich), `gmail.modify` (Labels setzen), `gmail.labels` (Labels anlegen). Falls beim ersten Call ein 403 „insufficient scopes" zurückkommt, löse ich ein einmaliges Reconnect aus.
+- **Abgleich-Logik:** identisch zum Outlook-Abgleich – pro Lead-E-Mail per `q=to:<email>` oder `q=from:<email>` suchen, neueste Mail prüfen, Status setzen, Bounce-Heuristik (Mailer-Daemon-Adressen) wie bisher.
+- **Outlook-Code unverändert** – wirklich nichts angefasst, beide Provider laufen parallel.
 
-## 5. Fachrichtungs-Ordner
+### Was du danach hast
 
-### Virtuell im UI
-- Linke Sidebar im Marketing-Listen-Tab: Baum mit allen vorkommenden Fachrichtungen
-- Klick filtert Tabelle nach `specialty`
-- Zähler pro Ordner (Gesamt / Neu / Kontaktiert / Geantwortet)
-- Fachrichtungs-übergreifender Ordner „Alle"
-- Eigener Ordner pro Land (DE/PL/AT/CH) als zweite Ebene
-
-### Echt in Outlook
-- Neue Server-Function `ensureOutlookFolders`:
-  - Liest alle distinkten `specialty` aus `leads`
-  - Erstellt (falls fehlend) Unterordner unter Posteingang: `Leads/<Land>/<Fachrichtung>`
-  - Nutzt `POST /me/mailFolders/{parent}/childFolders`
-- Beim Sync: gesendete/empfangene Mails, die zu einem Lead gehören, werden per `POST /me/messages/{id}/move` in den passenden Fachrichtungs-Ordner einsortiert
-- Speichert `outlook_folder_id` pro Fachrichtung in neuer kleiner Tabelle `outlook_folders` (specialty, country, folder_id)
-
----
-
-## 6. UI-Änderungen
-- Neuer Tab/Bereich **„Outlook-Sync"** mit:
-  - Status der Verbindung (Connector verbunden? letzte Sync-Zeit)
-  - Button **„Jetzt mit Outlook abgleichen"** (triggert alle 3 Syncs nacheinander)
-  - Button **„Outlook-Ordner neu anlegen"** (für neue Fachrichtungen)
-  - Anzeige: x Leads aktualisiert, y neue Antworten, z Bounces
-- Marketinglisten-Tabelle: neue Spalte **Status** mit farbigem Badge, sortier-/filterbar
-- Sidebar mit Fachrichtungs-Baum (statt aktuelles flaches Layout)
-
----
-
-## 7. Was bleibt unverändert
-- Bestehende Firecrawl- & TED-Suche – nur Trigger ändert sich (manuell statt Cron)
-- Bestehende `leads`-Daten bleiben, bekommen nur neue Felder mit Default `neu`
-- Ausschreibungen-Tab bleibt
-
----
-
-## Voraussetzungen (du musst zustimmen / dranziehen)
-1. **Microsoft Outlook Connector** muss verbunden werden (einmaliger OAuth-Login mit dem Postfach, das die Marketing-Mails sendet). Ich starte den Connect-Flow nach Plan-Approval.
-2. Für Bounce-Erkennung wird das Postfach gelesen – das Konto braucht entsprechende Postfach-Rechte (bei privatem Outlook automatisch gegeben).
-
-Soll ich so umsetzen?
+- Outlook *und* Gmail werden zusammen abgeglichen, Lead-Status spiegelt das aktuelle Ergebnis aus beiden Postfächern
+- Pro Lead ein Klick zum vorbefüllten Entwurf in Gmail
+- Vorlagen-Verwaltung für wiederkehrende Anschreiben
+- Gmail-Labels analog zur Outlook-Ordnerstruktur
