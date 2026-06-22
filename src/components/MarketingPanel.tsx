@@ -86,6 +86,13 @@ interface OutlookState {
   folderCount: number;
 }
 
+interface GmailState {
+  connected: boolean;
+  lastRunAt: string | null;
+  lastSummary: { contacted: number; replied: number; bounced: number; labeled: number } | null;
+  labelCount: number;
+}
+
 export function MarketingPanel() {
   const fetchLeads = useServerFn(listLeads);
   const fetchJobs = useServerFn(listSearchJobs);
@@ -99,6 +106,13 @@ export function MarketingPanel() {
   const runBrak = useServerFn(scrapeBrak);
   const fetchSourceSearches = useServerFn(listSourceSearches);
   const dropSourceSearch = useServerFn(deleteSourceSearch);
+  const fetchGmailStateFn = useServerFn(getGmailSyncState);
+  const runGmailSync = useServerFn(syncGmailAll);
+  const runEnsureGmailLabels = useServerFn(ensureGmailLabels);
+  const runCreateDraft = useServerFn(createGmailDraft);
+  const fetchTemplates = useServerFn(listEmailTemplates);
+  const saveTemplate = useServerFn(upsertEmailTemplate);
+  const dropTemplate = useServerFn(deleteEmailTemplate);
 
   const [brakFach, setBrakFach] = useState<BrakFachgebiet>("Sozialrecht");
   const [brakOrt, setBrakOrt] = useState("");
