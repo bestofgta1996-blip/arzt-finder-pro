@@ -167,11 +167,13 @@ export function MarketingPanel() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [l, j, o, s] = await Promise.all([
+      const [l, j, o, s, g, t] = await Promise.all([
         fetchLeads({ data: {} }),
         fetchJobs(),
         fetchOutlookState(),
         fetchSourceSearches(),
+        fetchGmailStateFn(),
+        fetchTemplates(),
       ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
@@ -184,6 +186,15 @@ export function MarketingPanel() {
         });
       }
       if (s.ok) setSourceSearches(s.items);
+      if (g.ok) {
+        setGmailState({
+          connected: g.connected,
+          lastRunAt: g.lastRunAt,
+          lastSummary: g.lastSummary,
+          labelCount: g.labelCount,
+        });
+      }
+      if (t.ok) setTemplates(t.items);
     } finally {
       setLoading(false);
     }
