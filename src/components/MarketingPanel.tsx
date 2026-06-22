@@ -1110,6 +1110,16 @@ export function MarketingPanel() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openDraftDialog(lead)}
+                              disabled={!gmailState.connected}
+                              title={gmailState.connected ? "Entwurf in Gmail anlegen" : "Gmail ist nicht verbunden"}
+                              aria-label="Entwurf in Gmail anlegen"
+                            >
+                              <MailPlus className="size-4" />
+                            </Button>
                             <a
                               href={`mailto:${lead.email}`}
                               className="inline-flex items-center justify-center size-7 rounded hover:bg-accent"
@@ -1131,6 +1141,132 @@ export function MarketingPanel() {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Draft-Dialog */}
+      <Dialog open={!!draftLead} onOpenChange={(o) => !o && setDraftLead(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Entwurf in Gmail anlegen</DialogTitle>
+            <DialogDescription>
+              {draftLead ? (
+                <>
+                  Empfänger: <b>{draftLead.name ?? draftLead.email}</b> &lt;{draftLead.email}&gt;
+                  {draftLead.fachgebiet ? <> · {draftLead.fachgebiet}</> : null}
+                  {draftLead.stadt ? <> · {draftLead.stadt}</> : null}
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Vorlage</Label>
+              <Select value={draftTemplateId} onValueChange={onPickTemplate}>
+                <SelectTrigger><SelectValue placeholder="Vorlage wählen…" /></SelectTrigger>
+                <SelectContent>
+                  {templates
+                    .filter((t) => !draftLead?.zielgruppe || t.zielgruppe === draftLead.zielgruppe)
+                    .map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {ZIELGRUPPEN_LABEL[t.zielgruppe] ?? t.zielgruppe} – {t.betreff}
+                      </SelectItem>
+                    ))}
+                  {templates.length === 0 && (
+                    <SelectItem value="__none" disabled>Keine Vorlagen vorhanden</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Betreff</Label>
+              <Input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Text</Label>
+              <Textarea
+                value={draftBody}
+                onChange={(e) => setDraftBody(e.target.value)}
+                rows={12}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Platzhalter <code>{"{name}"}</code>, <code>{"{stadt}"}</code>, <code>{"{fachgebiet}"}</code> werden automatisch ersetzt.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDraftLead(null)} disabled={draftSaving}>
+              Abbrechen
+            </Button>
+            <Button onClick={submitDraft} disabled={draftSaving}>
+              {draftSaving ? <Loader2 className="size-4 animate-spin mr-2" /> : <MailPlus className="size-4 mr-2" />}
+              Entwurf anlegen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Template-Editor */}
+      <Dialog open={!!tplEditor} onOpenChange={(o) => !o && setTplEditor(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{tplEditor?.id ? "Vorlage bearbeiten" : "Neue Vorlage"}</DialogTitle>
+          </DialogHeader>
+          {tplEditor && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Zielgruppe</Label>
+                  <Select
+                    value={tplEditor.zielgruppe}
+                    onValueChange={(v) => setTplEditor({ ...tplEditor, zielgruppe: v })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(ZIELGRUPPEN_LABEL).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={tplEditor.is_default}
+                      onCheckedChange={(c) => setTplEditor({ ...tplEditor, is_default: c === true })}
+                    />
+                    Standard-Vorlage für diese Zielgruppe
+                  </label>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Betreff</Label>
+                <Input
+                  value={tplEditor.betreff}
+                  onChange={(e) => setTplEditor({ ...tplEditor, betreff: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Text</Label>
+                <Textarea
+                  value={tplEditor.body_text}
+                  onChange={(e) => setTplEditor({ ...tplEditor, body_text: e.target.value })}
+                  rows={12}
+                  className="font-mono text-xs"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTplEditor(null)} disabled={tplSaving}>
+              Abbrechen
+            </Button>
+            <Button onClick={submitTemplate} disabled={tplSaving}>
+              {tplSaving ? <Loader2 className="size-4 animate-spin mr-2" /> : <Save className="size-4 mr-2" />}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
