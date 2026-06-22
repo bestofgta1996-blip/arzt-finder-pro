@@ -135,6 +135,26 @@ export function MarketingPanel() {
     lastSummary: null,
     folderCount: 0,
   });
+  const [gmailState, setGmailState] = useState<GmailState>({
+    connected: false,
+    lastRunAt: null,
+    lastSummary: null,
+    labelCount: 0,
+  });
+  const [gmailSyncing, setGmailSyncing] = useState(false);
+  const [creatingLabels, setCreatingLabels] = useState(false);
+  const [applyLabels, setApplyLabels] = useState(false);
+
+  const [templates, setTemplates] = useState<DbEmailTemplate[]>([]);
+  const [tplEditor, setTplEditor] = useState<DbEmailTemplate | null>(null);
+  const [tplSaving, setTplSaving] = useState(false);
+
+  // Draft dialog state
+  const [draftLead, setDraftLead] = useState<DbLead | null>(null);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [draftTemplateId, setDraftTemplateId] = useState<string>("");
+  const [draftSaving, setDraftSaving] = useState(false);
 
   // New job form
   const [newJob, setNewJob] = useState({
