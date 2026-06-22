@@ -526,7 +526,7 @@ export function MarketingPanel() {
                           const fg = BRAK_FACHGEBIETE.find((f) => f === s.fachgebiet);
                           if (fg) setBrakFach(fg);
                           if (s.ort) setBrakOrt(s.ort);
-                          toast.info("Suchparameter übernommen – auf „Suchen & importieren" klicken");
+                          toast.info('Suchparameter übernommen – auf "Suchen & importieren" klicken');
                           if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
                         }}
                         aria-label="Suche wiederholen"
