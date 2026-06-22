@@ -34,14 +34,6 @@ import {
   type DbSourceSearch,
 } from "@/lib/sources.functions";
 import {
-  scrapeBrak,
-  BRAK_FACHGEBIETE,
-  listSourceSearches,
-  deleteSourceSearch,
-  type BrakFachgebiet,
-  type DbSourceSearch,
-} from "@/lib/sources.functions";
-import {
   getGmailSyncState,
   syncGmailAll,
   ensureGmailLabels,
