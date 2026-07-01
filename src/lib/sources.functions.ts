@@ -655,6 +655,134 @@ async function searchPlaces(
   return all;
 }
 
+/**
+ * Nearby-Search (Places API New) für einen einzelnen Kreis.
+ * Google liefert pro Aufruf max. 20 Orte; deshalb wird über ein Grid gerastert.
+ */
+async function searchNearbyCell(
+  includedTypes: string[],
+  textQueryFallback: string | null,
+  center: { lat: number; lng: number },
+  radiusMeters: number,
+  apiKey: string,
+  lovableKey: string,
+): Promise<GmapsPlace[]> {
+  // Falls kein passender Google-Typ verfügbar ist, auf Text-Search zurückfallen.
+  if (includedTypes.length === 0 && textQueryFallback) {
+    return searchPlaces(textQueryFallback, center, radiusMeters, 60, apiKey, lovableKey);
+  }
+  const body: Record<string, unknown> = {
+    includedTypes,
+    maxResultCount: 20,
+    languageCode: "de",
+    regionCode: "DE",
+    locationRestriction: {
+      circle: {
+        center: { latitude: center.lat, longitude: center.lng },
+        radius: Math.min(radiusMeters, 50000),
+      },
+    },
+  };
+  const res = await fetch(`${GMAPS_GATEWAY}/places/v1/places:searchNearby`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": apiKey,
+      "Content-Type": "application/json",
+      "X-Goog-FieldMask":
+        "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { places?: GmapsPlace[] };
+  return json.places ?? [];
+}
+
+/**
+ * Erzeugt ein Hex-Grid aus Zell-Zentren rund um `center` bis `radiusKm`.
+ * Zellradius = min(5 km, radiusKm) – enger Radius = weniger Google-Overhead.
+ */
+function buildGridCells(
+  center: { lat: number; lng: number },
+  radiusKm: number,
+): { cells: Array<{ lat: number; lng: number }>; cellRadiusMeters: number } {
+  const cellRadiusKm = Math.min(5, Math.max(1, radiusKm));
+  if (radiusKm <= cellRadiusKm) {
+    return { cells: [center], cellRadiusMeters: cellRadiusKm * 1000 };
+  }
+  // Hex-Grid: horizontaler Abstand = 1.5 * r, vertikaler = sqrt(3) * r
+  const stepKm = cellRadiusKm * 1.5;
+  const rowKm = cellRadiusKm * Math.sqrt(3);
+  const kmPerLat = 111;
+  const kmPerLng = 111 * Math.cos((center.lat * Math.PI) / 180);
+  const cells: Array<{ lat: number; lng: number }> = [];
+  const maxSteps = Math.ceil(radiusKm / cellRadiusKm) + 1;
+  for (let row = -maxSteps; row <= maxSteps; row++) {
+    for (let col = -maxSteps; col <= maxSteps; col++) {
+      const offsetX = col * stepKm + (row % 2 === 0 ? 0 : stepKm / 2);
+      const offsetY = row * rowKm;
+      const dist = Math.hypot(offsetX, offsetY);
+      if (dist > radiusKm) continue;
+      cells.push({
+        lat: center.lat + offsetY / kmPerLat,
+        lng: center.lng + offsetX / kmPerLng,
+      });
+    }
+  }
+  return { cells, cellRadiusMeters: cellRadiusKm * 1000 };
+}
+
+/**
+ * Grid-Suche: teilt das Suchgebiet in Teilzellen und ruft nearby-Search pro Zelle auf.
+ * Umgeht damit das 20-Treffer-pro-Request-Limit von Google Places (New).
+ */
+async function searchPlacesGrid(
+  zielgruppe: DsbZielgruppe,
+  textFallback: string,
+  center: { lat: number; lng: number },
+  radiusKm: number,
+  totalWanted: number,
+  apiKey: string,
+  lovableKey: string,
+): Promise<{ places: GmapsPlace[]; cellsTotal: number; cellsUsed: number }> {
+  const includedTypes = GMAPS_INCLUDED_TYPES[zielgruppe] ?? [];
+  const { cells, cellRadiusMeters } = buildGridCells(center, radiusKm);
+  const byId = new Map<string, GmapsPlace>();
+  const CONCURRENCY = 4;
+  let idx = 0;
+  let cellsUsed = 0;
+  const doOne = async (): Promise<void> => {
+    while (true) {
+      if (byId.size >= totalWanted) return;
+      const i = idx++;
+      if (i >= cells.length) return;
+      const results = await searchNearbyCell(
+        includedTypes,
+        textFallback,
+        cells[i],
+        cellRadiusMeters,
+        apiKey,
+        lovableKey,
+      );
+      cellsUsed++;
+      for (const p of results) {
+        if (!p.id || byId.has(p.id)) continue;
+        byId.set(p.id, p);
+      }
+    }
+  };
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < Math.min(CONCURRENCY, cells.length); w++) workers.push(doOne());
+  await Promise.all(workers);
+  return {
+    places: Array.from(byId.values()).slice(0, totalWanted),
+    cellsTotal: cells.length,
+    cellsUsed,
+  };
+}
+
+
 
 function deobfuscateEmails(text: string): string {
   return text
