@@ -1,52 +1,81 @@
-## Gmail-Integration (parallel zu Outlook)
 
-Gmail-Konto verbinden, automatische E-Mail-Entwürfe pro Lead anlegen und Postfach-Abgleich für Status-Updates – ergänzend zum bestehenden Outlook-Abgleich.
+# Neuer Modus: „Datenschutz" neben „Gutachten"
 
-### 1. Gmail-Connector verknüpfen
+Ziel: eigener Bereich für deine DSB-Akquise im Gesundheitswesen, sauber getrennt von der bestehenden Gutachten-Akquise – gleiches Login, gleiche Tabellen, aber alle Daten sind pro Modus gefiltert.
 
-Den bestehenden Workspace-Connector „David's Gmail" mit dem Projekt verknüpfen, damit Gmail-API-Calls möglich werden. Erfordert deine Bestätigung im Dialog – kein neuer API-Key nötig.
+## Umschalter oben in der App
 
-### 2. Neue Karte „Gmail-Abgleich" im Marketing-Panel
+- Neuer Segmented-Switch im Header: **Gutachten | Datenschutz**.
+- Ausgewählter Modus wird pro Nutzer gespeichert (localStorage + URL-Search-Param `?modus=dsb`), damit Refresh und geteilte Links funktionieren.
+- Der Modus wird an alle Panels (Suche, Leads, Vorlagen, Outlook/Gmail-Ansicht, Ausschreibungen) durchgereicht.
 
-Direkt neben der vorhandenen Outlook-Karte, gleicher Aufbau für Wiedererkennung:
-- Status-Anzeige (verbunden / nicht verbunden, letzter Abgleich, letzte Zusammenfassung)
-- Button **Jetzt abgleichen** – scannt gesendete Mails, Posteingang und Bounces, aktualisiert Lead-Status (neu → angeschrieben → geantwortet / bounce)
-- Button **Labels anlegen** – legt pro Fachgebiet ein Gmail-Label an (Pendant zu den Outlook-Ordnern)
-- Optional Checkbox **Eingegangene Antworten labeln** – versieht Antworten von bekannten Leads mit dem passenden Fachgebiet-Label
-- Beide Abgleiche (Outlook + Gmail) laufen unabhängig, Lead-Status zeigt jeweils das aktuellere Ergebnis
+## Datenmodell – ein neues Feld, sonst nichts verschieben
 
-### 3. Button „Entwurf in Gmail anlegen" pro Lead
+Neue Spalte `mode` auf:
+- `leads` → `mode text not null default 'gutachten'` (Werte: `gutachten` | `dsb`)
+- `email_templates` → dito
+- `source_searches` → dito
+- `tender_search_jobs` / `tenders` → dito (damit du DSB-relevante Ausschreibungen separat verwalten kannst)
 
-In der Lead-Liste neben den vorhandenen Aktionen (Status setzen, löschen):
-- Neuer Button **Entwurf anlegen** (Gmail-Icon)
-- Öffnet kleinen Dialog mit Vorlagen-Auswahl (Anwälte / Gutachter / Kliniken / Versicherungen) und befüllbarem Betreff/Text – Platzhalter `{name}`, `{stadt}`, `{fachgebiet}` werden automatisch eingesetzt
-- Beim Speichern: Entwurf landet in deinem Gmail-Ordner „Entwürfe"; du prüfst und sendest manuell
-- Lead-Status bleibt auf „neu", bis du tatsächlich sendest (der Abgleich erkennt das später automatisch)
+Vorteile: keine doppelten Tabellen, RLS bleibt unverändert (weiterhin `auth.uid()`), Bestandsdaten laufen automatisch als „gutachten" weiter.
 
-### 4. Vorlagen-Verwaltung (klein)
+Indizes: `(user_id, mode)` auf `leads`, `source_searches`, `email_templates`.
 
-Eine simple Vorlagen-Tabelle, damit Anschreiben nicht jedes Mal neu getippt werden müssen:
-- Pro Zielgruppe (Anwälte, Gutachter, …) je ein Standard-Template (Betreff + HTML/Text)
-- Bearbeitbar über eigene kleine Karte „Anschreiben-Vorlagen" unter den Such-Profilen
-- Werden beim Entwurf-Anlegen vorgeschlagen, lassen sich pro Lead noch anpassen
+## Recherche-Presets für DSB (Zielgruppen)
 
-### Technische Details
+Neue Standard-Presets, die beim ersten Wechsel in den DSB-Modus einmalig für den Nutzer angelegt werden (leer editierbar):
 
-- **Datenmodell:**
-  - Neue Tabelle `email_templates` (zielgruppe, sprache, betreff, body_html, body_text)
-  - Erweiterung `outlook_sync_state` → generisch zu `mailbox_sync_state` mit `provider`-Spalte (`outlook` / `gmail`); bestehende Daten migrieren. Alternativ separate Tabelle `gmail_sync_state` (weniger Refactor, doppelte Struktur) – ich nehme den Refactor, sauberer.
-  - Leads bekommen optional `gmail_draft_id` und `gmail_thread_id` (für Wiedererkennung beim Abgleich)
-- **Server-Funktionen** in `src/lib/gmail.functions.ts`:
-  - `getGmailSyncState`, `syncGmailAll({ moveToLabels })`, `ensureGmailLabels`
-  - `createGmailDraft({ leadId, subject, bodyHtml })`
-  - Alle Calls über Connector-Gateway `https://connector-gateway.lovable.dev/google_mail/gmail/v1`, Auth via `LOVABLE_API_KEY` + `GOOGLE_MAIL_API_KEY`
-- **Scopes:** der Connector braucht `gmail.compose` (Entwürfe), `gmail.readonly` (Abgleich), `gmail.modify` (Labels setzen), `gmail.labels` (Labels anlegen). Falls beim ersten Call ein 403 „insufficient scopes" zurückkommt, löse ich ein einmaliges Reconnect aus.
-- **Abgleich-Logik:** identisch zum Outlook-Abgleich – pro Lead-E-Mail per `q=to:<email>` oder `q=from:<email>` suchen, neueste Mail prüfen, Status setzen, Bounce-Heuristik (Mailer-Daemon-Adressen) wie bisher.
-- **Outlook-Code unverändert** – wirklich nichts angefasst, beide Provider laufen parallel.
+- **Arztpraxen & MVZ (DE)** – Suchbegriffe: „Arztpraxis", „MVZ", „Hausarzt", „Facharzt" + Region.
+- **Kliniken & Reha** – „Krankenhaus", „Klinik", „Reha-Klinik", „Tagesklinik".
+- **Zahnärzte, Physio, Heilpraktiker** – jeweils eigenes Preset.
+- **Apotheken, Pflegedienste, Labore** – jeweils eigenes Preset.
 
-### Was du danach hast
+Jedes Preset schreibt `mode='dsb'` in die neuen Leads, damit sie nur im DSB-Bereich auftauchen.
 
-- Outlook *und* Gmail werden zusammen abgeglichen, Lead-Status spiegelt das aktuelle Ergebnis aus beiden Postfächern
-- Pro Lead ein Klick zum vorbefüllten Entwurf in Gmail
-- Vorlagen-Verwaltung für wiederkehrende Anschreiben
-- Gmail-Labels analog zur Outlook-Ordnerstruktur
+Fachgebiet-Feld auf Leads wird im DSB-Modus mit der Zielgruppe (z. B. „Zahnarztpraxis") belegt.
+
+## Vorlagen-Bereich
+
+- Vorlagen-Panel filtert nach aktuellem Modus.
+- Im DSB-Modus zeigt es zunächst nur eine leere Kategorie „Datenschutz" – du schreibst die Anschreiben selbst (wie gewünscht).
+- Vorhandene Gutachten-Vorlagen bleiben im Gutachten-Modus sichtbar, im DSB-Modus unsichtbar.
+
+## Mail-Integration (Outlook + Gmail)
+
+- Beim Anlegen von Entwürfen wird das Vorlagen-Dropdown ebenfalls modus-gefiltert.
+- Sync (Sent / Reply / Bounce) läuft unverändert für alle Leads beider Modi – nur die Anzeige ist getrennt.
+- Optional: eigene Label-/Ordner-Hierarchie `Datenschutz/[Zielgruppe]` in Gmail/Outlook, parallel zu `Leads/[Land]/[Fachgebiet]` für Gutachten.
+
+## UI-Änderungen (Frontend)
+
+- `src/routes/index.tsx`: Header-Switch `Gutachten | Datenschutz`, gemeinsamer `ModeProvider` (React Context) für alle Panels.
+- Farbliche Kennung: dezenter Badge/Untertitel („Modus: Datenschutz"), Primärfarbe unverändert – bleibt seriös.
+- Alle Listen (`LeadsList`, `MarketingPanel`, `TemplatesPanel`, `SearchPanel`, `TendersPanel`) lesen `mode` aus Context und übergeben ihn an alle Server-Funktionsaufrufe.
+- CSV-Import legt Leads ebenfalls im aktuell aktiven Modus an.
+
+## Server-Funktionen anpassen
+
+Nur zusätzliche `mode`-Parameter, keine neuen Endpunkte:
+- `sources.functions.ts`: `runSourceSearch`, `listSources`, `upsertSource` bekommen `mode`.
+- `marketing.functions.ts` (Leads-CRUD): `listLeads`, `createLead`, `updateLead`, `importLeadsCsv` bekommen `mode`.
+- `gmail.functions.ts` / Outlook-Pendant: `createDraft` liest `mode` für Vorlagen-Auswahl und Labels.
+- `tenders.functions.ts`: Filter nach `mode`.
+
+Fallback: fehlt der Parameter, gilt `gutachten` (Rückwärtskompatibilität).
+
+## Migrations-Reihenfolge (eine Migration)
+
+1. `ALTER TABLE` für `mode`-Spalten mit Default `'gutachten'`.
+2. Check-Constraint `mode IN ('gutachten','dsb')`.
+3. Indizes anlegen.
+4. Bestehende Zeilen bleiben `gutachten`.
+
+## Was NICHT geändert wird
+
+- Bestehende Gutachten-Recherche, -Leads, -Vorlagen, -Outlook/Gmail-Logik – funktional unverändert.
+- RLS-Policies, Auth, Bezahlung/Sekrete.
+- Keine Team-Funktionen, keine neue Route – alles im bekannten Dashboard, nur mit Modus-Umschalter.
+
+## Optionale Erweiterung (später, jetzt nicht enthalten)
+
+- Eigene DSB-spezifische Lead-Felder (z. B. „Anzahl Mitarbeiter", „Verarbeitungsverzeichnis vorhanden") – kann später als JSON-Feld `mode_data` ergänzt werden, ohne die Kern-Tabelle aufzublähen.
