@@ -31,6 +31,7 @@ import {
   type TenderStatus,
 } from "@/lib/tenders.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useMode } from "@/hooks/useMode";
 
 const STATUS_LABEL: Record<TenderStatus, string> = {
   neu: "Neu",
