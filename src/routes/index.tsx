@@ -254,3 +254,36 @@ function HomeInner() {
     </div>
   );
 }
+
+function ModeSwitcher({ mode, setMode }: { mode: AppMode; setMode: (m: AppMode) => void }) {
+  const items: Array<{ v: AppMode; label: string }> = [
+    { v: "gutachten", label: MODE_LABEL.gutachten },
+    { v: "dsb", label: MODE_LABEL.dsb },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Modus wechseln"
+      className="inline-flex rounded-md border bg-background p-0.5 text-xs"
+    >
+      {items.map((it) => {
+        const active = mode === it.v;
+        return (
+          <button
+            key={it.v}
+            role="tab"
+            aria-selected={active}
+            onClick={() => setMode(it.v)}
+            className={`px-2.5 py-1 rounded-sm transition-colors ${
+              active
+                ? "bg-primary text-primary-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
