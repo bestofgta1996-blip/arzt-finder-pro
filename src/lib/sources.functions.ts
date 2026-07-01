@@ -786,10 +786,17 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         quelle_url: string;
       };
       const candidates: Cand[] = [];
+      let noWebsite = 0;
+      let scrapeFailed = 0;
+      let noEmail = 0;
       for (const p of places) {
-        if (!p.websiteUri) continue;
-        const email = await scrapeEmailFromWebsite(p.websiteUri, firecrawlKey);
-        if (!email) continue;
+        if (!p.websiteUri) { noWebsite++; continue; }
+        const { email, reason } = await scrapeEmailFromWebsite(p.websiteUri, firecrawlKey);
+        if (!email) {
+          if (reason === "scrape_failed") scrapeFailed++;
+          else if (reason === "no_email") noEmail++;
+          continue;
+        }
         // Stadt aus formattedAddress schätzen (letzter Teil vor "Deutschland")
         let stadt: string | null = geo.stadt;
         if (p.formattedAddress) {
@@ -809,6 +816,11 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
           quelle_url: p.websiteUri.slice(0, 800),
         });
       }
+      console.log("[gmaps-scrape]", {
+        plz: data.plz, zielgruppe: data.zielgruppe,
+        places: places.length, noWebsite, scrapeFailed, noEmail, withEmail: candidates.length,
+      });
+
 
       // Dedupe by email
       const byEmail = new Map<string, Cand>();
