@@ -22,6 +22,7 @@ export type Database = {
           erstellt_am: string
           id: string
           is_default: boolean
+          mode: string
           sprache: string
           updated_at: string
           zielgruppe: string
@@ -33,6 +34,7 @@ export type Database = {
           erstellt_am?: string
           id?: string
           is_default?: boolean
+          mode?: string
           sprache?: string
           updated_at?: string
           zielgruppe: string
@@ -44,6 +46,7 @@ export type Database = {
           erstellt_am?: string
           id?: string
           is_default?: boolean
+          mode?: string
           sprache?: string
           updated_at?: string
           zielgruppe?: string
@@ -125,6 +128,7 @@ export type Database = {
           land: string
           last_contacted_at: string | null
           last_replied_at: string | null
+          mode: string
           name: string | null
           notiz: string | null
           outlook_folder_id: string | null
@@ -154,6 +158,7 @@ export type Database = {
           land: string
           last_contacted_at?: string | null
           last_replied_at?: string | null
+          mode?: string
           name?: string | null
           notiz?: string | null
           outlook_folder_id?: string | null
@@ -183,6 +188,7 @@ export type Database = {
           land?: string
           last_contacted_at?: string | null
           last_replied_at?: string | null
+          mode?: string
           name?: string | null
           notiz?: string | null
           outlook_folder_id?: string | null
@@ -270,6 +276,7 @@ export type Database = {
           land: string
           last_hit_count: number | null
           last_run_at: string | null
+          mode: string
           ort: string | null
           updated_at: string
           zielgruppen: string[]
@@ -283,6 +290,7 @@ export type Database = {
           land: string
           last_hit_count?: number | null
           last_run_at?: string | null
+          mode?: string
           ort?: string | null
           updated_at?: string
           zielgruppen?: string[]
@@ -296,6 +304,7 @@ export type Database = {
           land?: string
           last_hit_count?: number | null
           last_run_at?: string | null
+          mode?: string
           ort?: string | null
           updated_at?: string
           zielgruppen?: string[]
@@ -338,6 +347,7 @@ export type Database = {
           id: string
           inserted: number
           land: string
+          mode: string
           ok: boolean
           ort: string | null
           params: Json
@@ -352,6 +362,7 @@ export type Database = {
           id?: string
           inserted?: number
           land?: string
+          mode?: string
           ok?: boolean
           ort?: string | null
           params?: Json
@@ -366,6 +377,7 @@ export type Database = {
           id?: string
           inserted?: number
           land?: string
+          mode?: string
           ok?: boolean
           ort?: string | null
           params?: Json
@@ -434,6 +446,7 @@ export type Database = {
           laender: string[]
           last_hit_count: number | null
           last_run_at: string | null
+          mode: string
           name: string
           schlagworte: string[]
           updated_at: string
@@ -446,6 +459,7 @@ export type Database = {
           laender?: string[]
           last_hit_count?: number | null
           last_run_at?: string | null
+          mode?: string
           name: string
           schlagworte?: string[]
           updated_at?: string
@@ -458,6 +472,7 @@ export type Database = {
           laender?: string[]
           last_hit_count?: number | null
           last_run_at?: string | null
+          mode?: string
           name?: string
           schlagworte?: string[]
           updated_at?: string
@@ -474,6 +489,7 @@ export type Database = {
           gefunden_am: string
           id: string
           land: string | null
+          mode: string
           notiz: string | null
           portal_slug: string
           qualitaet_score: number
@@ -493,6 +509,7 @@ export type Database = {
           gefunden_am?: string
           id?: string
           land?: string | null
+          mode?: string
           notiz?: string | null
           portal_slug: string
           qualitaet_score?: number
@@ -512,6 +529,7 @@ export type Database = {
           gefunden_am?: string
           id?: string
           land?: string | null
+          mode?: string
           notiz?: string | null
           portal_slug?: string
           qualitaet_score?: number
