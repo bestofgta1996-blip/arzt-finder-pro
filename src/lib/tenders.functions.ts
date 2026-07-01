@@ -177,17 +177,8 @@ export const deleteTenderSearchJob = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const deleteTenderSearchJob = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string }) => d)
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("tender_search_jobs")
-      .delete()
-      .eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
+
+
 
 /**
  * TED – Tenders Electronic Daily Search API (v3).
