@@ -630,8 +630,20 @@ async function searchPlaces(
   return json.places ?? [];
 }
 
-async function scrapeEmailFromWebsite(website: string, firecrawlKey: string): Promise<string | null> {
-  // Versuche Impressum-Seite zuerst, dann Startseite
+function deobfuscateEmails(text: string): string {
+  return text
+    .replace(/\s*\[\s*at\s*\]\s*/gi, "@")
+    .replace(/\s*\(\s*at\s*\)\s*/gi, "@")
+    .replace(/\s+@\s+/g, "@")
+    .replace(/\s*\[\s*dot\s*\]\s*/gi, ".")
+    .replace(/\s*\(\s*dot\s*\)\s*/gi, ".")
+    .replace(/\s*&#64;\s*/gi, "@");
+}
+
+async function scrapeEmailFromWebsite(
+  website: string,
+  firecrawlKey: string,
+): Promise<{ email: string | null; reason: "ok" | "no_url" | "no_email" | "scrape_failed" }> {
   const origin = (() => {
     try {
       return new URL(website).origin;
@@ -639,8 +651,16 @@ async function scrapeEmailFromWebsite(website: string, firecrawlKey: string): Pr
       return null;
     }
   })();
-  if (!origin) return null;
-  const urls = [`${origin}/impressum`, `${origin}/kontakt`, origin];
+  if (!origin) return { email: null, reason: "no_url" };
+  const urls = [
+    origin,
+    `${origin}/impressum`,
+    `${origin}/impressum.html`,
+    `${origin}/kontakt`,
+    `${origin}/kontakt.html`,
+    `${origin}/datenschutz`,
+  ];
+  let anyScraped = false;
   for (const url of urls) {
     try {
       const res = await fetch("https://api.firecrawl.dev/v2/scrape", {
@@ -651,22 +671,39 @@ async function scrapeEmailFromWebsite(website: string, firecrawlKey: string): Pr
         },
         body: JSON.stringify({
           url,
-          formats: ["markdown"],
+          formats: ["markdown", "html"],
           onlyMainContent: false,
           timeout: 15000,
         }),
       });
       if (!res.ok) continue;
-      const json = (await res.json()) as { data?: { markdown?: string } };
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: { markdown?: string; html?: string };
+      };
       const md = json.data?.markdown ?? "";
-      const email = extractEmail(md);
-      if (email) return email;
+      const html = json.data?.html ?? "";
+      if (!md && !html) continue;
+      anyScraped = true;
+
+      // 1. Direkt aus mailto: (verlässlichste Quelle)
+      const mailto = html.match(/mailto:([^"'?\s<>]+)/i);
+      if (mailto) {
+        const e = extractEmail(mailto[1]);
+        if (e) return { email: e, reason: "ok" };
+      }
+
+      // 2. Aus deobfuscated Markdown + HTML
+      const combined = deobfuscateEmails(`${md}\n${html}`);
+      const email = extractEmail(combined);
+      if (email) return { email, reason: "ok" };
     } catch {
       /* try next */
     }
   }
-  return null;
+  return { email: null, reason: anyScraped ? "no_email" : "scrape_failed" };
 }
+
 
 export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => ScrapeGmapsInput.parse(d))
@@ -749,10 +786,17 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         quelle_url: string;
       };
       const candidates: Cand[] = [];
+      let noWebsite = 0;
+      let scrapeFailed = 0;
+      let noEmail = 0;
       for (const p of places) {
-        if (!p.websiteUri) continue;
-        const email = await scrapeEmailFromWebsite(p.websiteUri, firecrawlKey);
-        if (!email) continue;
+        if (!p.websiteUri) { noWebsite++; continue; }
+        const { email, reason } = await scrapeEmailFromWebsite(p.websiteUri, firecrawlKey);
+        if (!email) {
+          if (reason === "scrape_failed") scrapeFailed++;
+          else if (reason === "no_email") noEmail++;
+          continue;
+        }
         // Stadt aus formattedAddress schätzen (letzter Teil vor "Deutschland")
         let stadt: string | null = geo.stadt;
         if (p.formattedAddress) {
@@ -772,6 +816,11 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
           quelle_url: p.websiteUri.slice(0, 800),
         });
       }
+      console.log("[gmaps-scrape]", {
+        plz: data.plz, zielgruppe: data.zielgruppe,
+        places: places.length, noWebsite, scrapeFailed, noEmail, withEmail: candidates.length,
+      });
+
 
       // Dedupe by email
       const byEmail = new Map<string, Cand>();
