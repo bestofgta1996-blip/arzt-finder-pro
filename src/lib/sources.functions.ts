@@ -539,3 +539,293 @@ export const scrapeDsbHealthcare = createServerFn({ method: "POST" })
     },
   );
 
+
+// ---- Google Maps DSB-Recherche (PLZ + Radius) ---------------------
+
+const GMAPS_QUERY_HINTS: Record<DsbZielgruppe, string[]> = {
+  "Arztpraxen & MVZ": ["Arztpraxis", "MVZ Medizinisches Versorgungszentrum"],
+  "Kliniken & Reha": ["Krankenhaus Klinik", "Reha-Klinik"],
+  "Zahnärzte": ["Zahnarzt Zahnarztpraxis"],
+  "Physiotherapie": ["Physiotherapie Praxis"],
+  "Heilpraktiker": ["Heilpraktiker Praxis"],
+  "Apotheken": ["Apotheke"],
+  "Pflegedienste": ["Ambulanter Pflegedienst", "Seniorenheim Pflegeheim"],
+  "Labore": ["Medizinisches Labor Diagnostik"],
+};
+
+const ScrapeGmapsInput = z.object({
+  zielgruppe: z.enum(DSB_ZIELGRUPPEN),
+  plz: z.string().trim().regex(/^\d{4,5}$/, "PLZ muss 4–5 Ziffern haben"),
+  radiusKm: z.number().int().min(1).max(50).optional().default(10),
+  limit: z.number().int().min(1).max(30).optional().default(15),
+});
+
+interface GmapsPlace {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  websiteUri?: string;
+  nationalPhoneNumber?: string;
+  internationalPhoneNumber?: string;
+}
+
+const GMAPS_GATEWAY = "https://connector-gateway.lovable.dev/google_maps";
+
+async function geocodePlz(plz: string, apiKey: string, lovableKey: string): Promise<{ lat: number; lng: number; stadt: string | null } | null> {
+  const url = `${GMAPS_GATEWAY}/maps/api/geocode/json?address=${encodeURIComponent(plz + ", Germany")}&region=de&language=de`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": apiKey,
+    },
+  });
+  if (!res.ok) return null;
+  const json = (await res.json()) as {
+    results?: Array<{
+      geometry?: { location?: { lat: number; lng: number } };
+      address_components?: Array<{ long_name: string; types: string[] }>;
+    }>;
+  };
+  const first = json.results?.[0];
+  const loc = first?.geometry?.location;
+  if (!loc) return null;
+  const cityComp = first?.address_components?.find(
+    (c) => c.types.includes("locality") || c.types.includes("postal_town"),
+  );
+  return { lat: loc.lat, lng: loc.lng, stadt: cityComp?.long_name ?? null };
+}
+
+async function searchPlaces(
+  query: string,
+  center: { lat: number; lng: number },
+  radiusMeters: number,
+  pageSize: number,
+  apiKey: string,
+  lovableKey: string,
+): Promise<GmapsPlace[]> {
+  const res = await fetch(`${GMAPS_GATEWAY}/places/v1/places:searchText`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": apiKey,
+      "Content-Type": "application/json",
+      "X-Goog-FieldMask":
+        "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber",
+    },
+    body: JSON.stringify({
+      textQuery: query,
+      languageCode: "de",
+      regionCode: "DE",
+      pageSize,
+      locationBias: {
+        circle: {
+          center: { latitude: center.lat, longitude: center.lng },
+          radius: radiusMeters,
+        },
+      },
+    }),
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { places?: GmapsPlace[] };
+  return json.places ?? [];
+}
+
+async function scrapeEmailFromWebsite(website: string, firecrawlKey: string): Promise<string | null> {
+  // Versuche Impressum-Seite zuerst, dann Startseite
+  const origin = (() => {
+    try {
+      return new URL(website).origin;
+    } catch {
+      return null;
+    }
+  })();
+  if (!origin) return null;
+  const urls = [`${origin}/impressum`, `${origin}/kontakt`, origin];
+  for (const url of urls) {
+    try {
+      const res = await fetch("https://api.firecrawl.dev/v2/scrape", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${firecrawlKey}`,
+        },
+        body: JSON.stringify({
+          url,
+          formats: ["markdown"],
+          onlyMainContent: false,
+          timeout: 15000,
+        }),
+      });
+      if (!res.ok) continue;
+      const json = (await res.json()) as { data?: { markdown?: string } };
+      const md = json.data?.markdown ?? "";
+      const email = extractEmail(md);
+      if (email) return email;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => ScrapeGmapsInput.parse(d))
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      found: number;
+      inserted: number;
+      skipped: number;
+      places: number;
+      preview: Array<{ email: string; name: string | null; website: string | null }>;
+    }> => {
+      const logSearch = async (result: { ok: boolean; error?: string; found: number; inserted: number; skipped: number }) => {
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.from("source_searches").insert({
+            quelle: "google_maps",
+            fachgebiet: data.zielgruppe,
+            ort: data.plz,
+            land: "DE",
+            mode: "dsb",
+            params: { radiusKm: data.radiusKm, limit: data.limit },
+            found: result.found,
+            inserted: result.inserted,
+            skipped: result.skipped,
+            ok: result.ok,
+            error: result.error ?? null,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+        } catch {
+          /* ignore */
+        }
+      };
+
+      const lovableKey = process.env.LOVABLE_API_KEY;
+      const gmapsKey = process.env.GOOGLE_MAPS_API_KEY;
+      const firecrawlKey = process.env.FIRECRAWL_API_KEY;
+      if (!lovableKey || !gmapsKey) {
+        const r = { ok: false, error: "Google Maps Connector nicht konfiguriert.", found: 0, inserted: 0, skipped: 0, places: 0, preview: [] };
+        await logSearch(r);
+        return r;
+      }
+      if (!firecrawlKey) {
+        const r = { ok: false, error: "FIRECRAWL_API_KEY fehlt (wird für E-Mail-Extraktion aus Websites benötigt).", found: 0, inserted: 0, skipped: 0, places: 0, preview: [] };
+        await logSearch(r);
+        return r;
+      }
+
+      // 1. PLZ geocodieren
+      const geo = await geocodePlz(data.plz, gmapsKey, lovableKey);
+      if (!geo) {
+        const r = { ok: false, error: `PLZ ${data.plz} konnte nicht geocodiert werden.`, found: 0, inserted: 0, skipped: 0, places: 0, preview: [] };
+        await logSearch(r);
+        return r;
+      }
+
+      // 2. Places suchen (mehrere Query-Hints, dedupe by place.id)
+      const hints = GMAPS_QUERY_HINTS[data.zielgruppe];
+      const radiusMeters = Math.min(data.radiusKm * 1000, 50000);
+      const placesById = new Map<string, GmapsPlace>();
+      for (const hint of hints) {
+        const results = await searchPlaces(hint, geo, radiusMeters, Math.min(data.limit + 5, 20), gmapsKey, lovableKey);
+        for (const p of results) {
+          if (!p.id || placesById.has(p.id)) continue;
+          placesById.set(p.id, p);
+        }
+      }
+      const places = Array.from(placesById.values()).slice(0, data.limit);
+
+      // 3. Für jeden Ort mit Website: E-Mail extrahieren
+      type Cand = {
+        email: string;
+        name: string | null;
+        telefon: string | null;
+        website: string | null;
+        stadt: string | null;
+        quelle_url: string;
+      };
+      const candidates: Cand[] = [];
+      for (const p of places) {
+        if (!p.websiteUri) continue;
+        const email = await scrapeEmailFromWebsite(p.websiteUri, firecrawlKey);
+        if (!email) continue;
+        // Stadt aus formattedAddress schätzen (letzter Teil vor "Deutschland")
+        let stadt: string | null = geo.stadt;
+        if (p.formattedAddress) {
+          const parts = p.formattedAddress.split(",").map((s) => s.trim());
+          const cityPart = parts.length >= 2 ? parts[parts.length - 2] : null;
+          if (cityPart) {
+            const m = cityPart.match(/\d{4,5}\s+(.+)/);
+            stadt = (m ? m[1] : cityPart).slice(0, 120);
+          }
+        }
+        candidates.push({
+          email: email.toLowerCase(),
+          name: p.displayName?.text ?? null,
+          telefon: p.nationalPhoneNumber ?? p.internationalPhoneNumber ?? null,
+          website: (() => { try { return new URL(p.websiteUri!).origin; } catch { return p.websiteUri!; } })(),
+          stadt,
+          quelle_url: p.websiteUri.slice(0, 800),
+        });
+      }
+
+      // Dedupe by email
+      const byEmail = new Map<string, Cand>();
+      for (const c of candidates) if (!byEmail.has(c.email)) byEmail.set(c.email, c);
+      const unique = Array.from(byEmail.values());
+
+      if (unique.length === 0) {
+        const r = { ok: true, found: 0, inserted: 0, skipped: 0, places: places.length, preview: [] };
+        await logSearch(r);
+        return r;
+      }
+
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { scoreLead } = await import("@/lib/scoring");
+      const rows = unique.map((c) => {
+        const base = {
+          land: "DE" as const,
+          email: c.email,
+          fachgebiet: data.zielgruppe,
+          zielgruppe: "gesundheitswesen",
+          name: c.name,
+          telefon: c.telefon,
+          website: c.website,
+          stadt: c.stadt,
+          quelle_url: c.quelle_url,
+          quelle_typ: "google_maps",
+          gerichtsgutachter: false,
+          mode: "dsb" as const,
+        };
+        const s = scoreLead(base);
+        return { ...base, status: "neu" as const, qualitaet_score: s.score, qualitaets_merkmale: s.merkmale };
+      });
+
+      const { data: inserted, error } = await supabaseAdmin
+        .from("leads")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .upsert(rows as any, { onConflict: "land,email", ignoreDuplicates: true })
+        .select("id");
+
+      if (error) {
+        const r = { ok: false, error: error.message, found: unique.length, inserted: 0, skipped: 0, places: places.length, preview: [] };
+        await logSearch(r);
+        return r;
+      }
+      const insertedCount = inserted?.length ?? 0;
+      const result = {
+        ok: true,
+        found: unique.length,
+        inserted: insertedCount,
+        skipped: unique.length - insertedCount,
+        places: places.length,
+        preview: unique.slice(0, 5).map((c) => ({ email: c.email, name: c.name, website: c.website })),
+      };
+      await logSearch(result);
+      return result;
+    },
+  );
