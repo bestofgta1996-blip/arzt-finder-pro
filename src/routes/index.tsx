@@ -13,7 +13,8 @@ import { MarketingPanel } from "@/components/MarketingPanel";
 import { TendersPanel } from "@/components/TendersPanel";
 import { loadLeads, saveLeads, type Lead } from "@/lib/leads";
 import { upsertLeads, LAENDER } from "@/lib/marketing.functions";
-import { Stethoscope, Globe2, Menu, ListChecks, FileSearch, Search, ClipboardPaste, Database, FileText } from "lucide-react";
+import { ModeProvider, useMode, MODE_LABEL, type AppMode } from "@/hooks/useMode";
+import { Stethoscope, Globe2, Menu, ListChecks, FileSearch, Search, ClipboardPaste, Database, FileText, ShieldCheck } from "lucide-react";
 
 const NAV_ITEMS = [
   { value: "marketing", label: "Marketinglisten", icon: ListChecks },
@@ -55,6 +56,15 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+  return (
+    <ModeProvider>
+      <HomeInner />
+    </ModeProvider>
+  );
+}
+
+function HomeInner() {
+  const { mode, setMode } = useMode();
   const cloudUpsert = useServerFn(upsertLeads);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tab, setTab] = useState("marketing");
