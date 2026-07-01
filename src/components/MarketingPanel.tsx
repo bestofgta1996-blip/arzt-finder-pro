@@ -133,6 +133,16 @@ export function MarketingPanel() {
   const [dsbLimit, setDsbLimit] = useState(10);
   const [dsbLoading, setDsbLoading] = useState(false);
   const [dsbLast, setDsbLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
+
+  // Google Maps DSB-Recherche (PLZ + Radius)
+  const runGmaps = useServerFn(scrapeGoogleMapsHealthcare);
+  const [gmapsZielgruppe, setGmapsZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
+  const [gmapsPlz, setGmapsPlz] = useState("");
+  const [gmapsRadius, setGmapsRadius] = useState(10);
+  const [gmapsLimit, setGmapsLimit] = useState(15);
+  const [gmapsLoading, setGmapsLoading] = useState(false);
+  const [gmapsLast, setGmapsLast] = useState<{ places: number; found: number; inserted: number; skipped: number } | null>(null);
+
   const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
   const [land, setLand] = useState<LandCode>("DE");
