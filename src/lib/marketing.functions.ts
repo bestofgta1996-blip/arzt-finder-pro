@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+export const APP_MODES = ["gutachten", "dsb"] as const;
+export type AppMode = (typeof APP_MODES)[number];
+const ModeSchema = z.enum(APP_MODES).optional().default("gutachten");
+
+
+
 export const LAENDER = ["DE", "PL", "UK", "FR", "IT", "ES"] as const;
 export type LandCode = (typeof LAENDER)[number];
 
@@ -85,10 +91,12 @@ const LeadInsert = z.object({
   quelle_url: z.string().max(800).optional().nullable(),
   quelle_typ: z.string().max(60).optional().nullable(),
   gerichtsgutachter: z.boolean().optional().default(false),
+  mode: z.enum(APP_MODES).optional().default("gutachten"),
 });
 
 const ListLeadsInput = z.object({
   land: z.enum(LAENDER).optional(),
+  mode: ModeSchema,
 });
 
 export const listLeads = createServerFn({ method: "POST" })
@@ -98,6 +106,7 @@ export const listLeads = createServerFn({ method: "POST" })
     let q = supabaseAdmin
       .from("leads")
       .select("*")
+      .eq("mode", data.mode)
       .order("qualitaet_score", { ascending: false })
       .order("erstellt_am", { ascending: false })
       .limit(5000);
@@ -116,6 +125,7 @@ export const upsertLeads = createServerFn({ method: "POST" })
       const s = scoreLead(l);
       return {
         ...l,
+        mode: l.mode ?? "gutachten",
         email: l.email.toLowerCase(),
         status: "neu" as const,
         qualitaet_score: s.score,
@@ -176,17 +186,20 @@ const SearchJobInput = z.object({
   zielgruppen: z.array(z.string()).min(1).max(10),
   gerichtsgutachter: z.boolean().optional().default(false),
   aktiv: z.boolean().optional().default(true),
+  mode: z.enum(APP_MODES).optional().default("gutachten"),
 });
 
-export const listSearchJobs = createServerFn({ method: "GET" })
-  .handler(async (): Promise<{ ok: boolean; error?: string; jobs: DbSearchJob[] }> => {
+export const listSearchJobs = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ mode: ModeSchema }).parse(d ?? {}))
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string; jobs: DbSearchJob[] }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    const { data: rows, error } = await supabaseAdmin
       .from("search_jobs")
       .select("*")
+      .eq("mode", data.mode)
       .order("erstellt_am", { ascending: false });
     if (error) return { ok: false, error: error.message, jobs: [] };
-    return { ok: true, jobs: (data ?? []) as DbSearchJob[] };
+    return { ok: true, jobs: (rows ?? []) as DbSearchJob[] };
   });
 
 export const upsertSearchJob = createServerFn({ method: "POST" })
@@ -196,6 +209,7 @@ export const upsertSearchJob = createServerFn({ method: "POST" })
     const row = {
       ...data,
       ort: data.ort ?? null,
+      mode: data.mode ?? "gutachten",
     };
     if (data.id) {
       const { error } = await supabaseAdmin.from("search_jobs").update(row).eq("id", data.id);
