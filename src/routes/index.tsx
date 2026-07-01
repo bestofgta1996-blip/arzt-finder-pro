@@ -144,54 +144,67 @@ function HomeInner() {
 
       <header className="border-b bg-card/60 backdrop-blur sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-3 md:py-4 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-          <div className="size-10 shrink-0 rounded-md bg-primary text-primary-foreground grid place-items-center">
-            <Stethoscope className="size-5" />
+          <div className={`size-10 shrink-0 rounded-md text-primary-foreground grid place-items-center ${mode === "dsb" ? "bg-slate-700" : "bg-primary"}`}>
+            {mode === "dsb" ? <ShieldCheck className="size-5" /> : <Stethoscope className="size-5" />}
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">IMB Akquise – Lead-Generierung für Ärzte &amp; Gutachter</h1>
+            <h1 className="truncate text-base md:text-lg font-semibold leading-tight">
+              {mode === "dsb"
+                ? "IMB Akquise · Datenschutz – DSB-Neukunden im Gesundheitswesen"
+                : "IMB Akquise – Lead-Generierung für Ärzte & Gutachter"}
+            </h1>
             <p className="truncate text-xs text-muted-foreground flex items-center gap-1">
               <Globe2 className="size-3 shrink-0" />
-              <span className="truncate">Marketinglisten · Dauersuche · Outlook</span>
+              <span className="truncate">
+                {mode === "dsb"
+                  ? "Arztpraxen · Kliniken · Apotheken · Pflege · Labore"
+                  : "Marketinglisten · Dauersuche · Outlook"}
+              </span>
             </p>
           </div>
 
-          {/* Mobile burger */}
-          <Sheet open={navOpen} onOpenChange={setNavOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="md:hidden shrink-0" aria-label="Menü öffnen">
-                <Menu className="size-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-72">
-              <SheetHeader>
-                <SheetTitle>Navigation</SheetTitle>
-              </SheetHeader>
-              <nav className="mt-4 flex flex-col gap-1">
-                {NAV_ITEMS.map((item) => {
-                  const Icon = item.icon;
-                  const active = item.value === tab;
-                  return (
-                    <button
-                      key={item.value}
-                      onClick={() => { setTab(item.value); setNavOpen(false); }}
-                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
-                        active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                      }`}
-                    >
-                      <Icon className="size-4 shrink-0" />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.value === "leads" && leads.length > 0 && (
-                        <span className="text-xs opacity-70">{leads.length}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-            </SheetContent>
-          </Sheet>
+          <div className="flex items-center gap-2">
+            {/* Mode Switcher */}
+            <ModeSwitcher mode={mode} setMode={setMode} />
 
-          <div className="hidden md:block text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{leads.length}</span> lokale Lead(s)
+            {/* Mobile burger */}
+            <Sheet open={navOpen} onOpenChange={setNavOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon" className="md:hidden shrink-0" aria-label="Menü öffnen">
+                  <Menu className="size-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-72">
+                <SheetHeader>
+                  <SheetTitle>Navigation</SheetTitle>
+                </SheetHeader>
+                <nav className="mt-4 flex flex-col gap-1">
+                  {NAV_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const active = item.value === tab;
+                    return (
+                      <button
+                        key={item.value}
+                        onClick={() => { setTab(item.value); setNavOpen(false); }}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
+                          active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                        }`}
+                      >
+                        <Icon className="size-4 shrink-0" />
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {item.value === "leads" && leads.length > 0 && (
+                          <span className="text-xs opacity-70">{leads.length}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </SheetContent>
+            </Sheet>
+
+            <div className="hidden md:block text-xs text-muted-foreground ml-2">
+              <span className="font-medium text-foreground">{leads.length}</span> lokale Lead(s)
+            </div>
           </div>
         </div>
       </header>
