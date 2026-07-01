@@ -28,6 +28,7 @@ import {
 import {
   scrapeBrak,
   scrapeDsbHealthcare,
+  scrapeGoogleMapsHealthcare,
   BRAK_FACHGEBIETE,
   DSB_ZIELGRUPPEN,
   listSourceSearches,
@@ -132,6 +133,16 @@ export function MarketingPanel() {
   const [dsbLimit, setDsbLimit] = useState(10);
   const [dsbLoading, setDsbLoading] = useState(false);
   const [dsbLast, setDsbLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
+
+  // Google Maps DSB-Recherche (PLZ + Radius)
+  const runGmaps = useServerFn(scrapeGoogleMapsHealthcare);
+  const [gmapsZielgruppe, setGmapsZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
+  const [gmapsPlz, setGmapsPlz] = useState("");
+  const [gmapsRadius, setGmapsRadius] = useState(10);
+  const [gmapsLimit, setGmapsLimit] = useState(15);
+  const [gmapsLoading, setGmapsLoading] = useState(false);
+  const [gmapsLast, setGmapsLast] = useState<{ places: number; found: number; inserted: number; skipped: number } | null>(null);
+
   const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
   const [land, setLand] = useState<LandCode>("DE");
@@ -879,6 +890,115 @@ export function MarketingPanel() {
               disabled={dsbLoading}
             >
               {dsbLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
+              Suchen &amp; importieren
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      )}
+
+      {/* Karten-Suche: Google Maps – nur im Datenschutz-Modus */}
+      {mode === "dsb" && (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4" /> Karten-Suche (Google Maps)
+            <Badge variant="outline" className="text-[10px]">PLZ + Radius</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Findet Praxen, Kliniken, Apotheken & Pflegedienste geografisch präzise über Google Maps
+            und extrahiert die Kontakt-E-Mail automatisch aus dem Impressum der Website.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="col-span-2 sm:col-span-2">
+              <Label className="text-xs">Zielgruppe</Label>
+              <Select value={gmapsZielgruppe} onValueChange={(v) => setGmapsZielgruppe(v as DsbZielgruppe)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DSB_ZIELGRUPPEN.map((z) => (
+                    <SelectItem key={z} value={z}>{z}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">PLZ</Label>
+              <Input
+                inputMode="numeric"
+                maxLength={5}
+                value={gmapsPlz}
+                onChange={(e) => setGmapsPlz(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                placeholder="80331"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Radius (km)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={gmapsRadius}
+                onChange={(e) => setGmapsRadius(Math.max(1, Math.min(50, Number(e.target.value) || 10)))}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Max. Treffer</Label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={gmapsLimit}
+                onChange={(e) => setGmapsLimit(Math.max(1, Math.min(30, Number(e.target.value) || 15)))}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {gmapsLast ? (
+                <span>
+                  Letzter Lauf: {gmapsLast.places} Orte gefunden · {gmapsLast.found} mit E-Mail ·{" "}
+                  <b>{gmapsLast.inserted}</b> neu importiert · {gmapsLast.skipped} Duplikate
+                </span>
+              ) : (
+                <span>Quelle: Google Maps Places (New) + Impressum-Scraping</span>
+              )}
+            </div>
+            <Button
+              onClick={async () => {
+                if (!/^\d{4,5}$/.test(gmapsPlz)) {
+                  toast.error("Bitte eine gültige deutsche PLZ eingeben (4–5 Ziffern)");
+                  return;
+                }
+                setGmapsLoading(true);
+                try {
+                  const r = await runGmaps({
+                    data: {
+                      zielgruppe: gmapsZielgruppe,
+                      plz: gmapsPlz,
+                      radiusKm: gmapsRadius,
+                      limit: gmapsLimit,
+                    },
+                  });
+                  if (!r.ok) {
+                    toast.error(r.error ?? "Suche fehlgeschlagen");
+                  } else {
+                    setGmapsLast({ places: r.places, found: r.found, inserted: r.inserted, skipped: r.skipped });
+                    toast.success(
+                      `${r.inserted} neue Leads importiert (${r.places} Orte, ${r.found} mit E-Mail)`,
+                    );
+                    await reload();
+                  }
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Fehler bei Karten-Suche");
+                } finally {
+                  setGmapsLoading(false);
+                }
+              }}
+              disabled={gmapsLoading}
+            >
+              {gmapsLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
               Suchen &amp; importieren
             </Button>
           </div>
