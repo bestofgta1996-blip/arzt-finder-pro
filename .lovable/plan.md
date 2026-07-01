@@ -1,81 +1,57 @@
+## Ziel
 
-# Neuer Modus: „Datenschutz" neben „Gutachten"
+Die Marketingliste zeigt **ausschließlich** durch die Google-Maps-Recherche importierte Leads mit E-Mail. Die Suche liefert deutlich mehr Treffer (>60) durch automatische Grid-Aufteilung. Alles auf einem Screen: Suchleiste oben, Ergebnistabelle darunter.
 
-Ziel: eigener Bereich für deine DSB-Akquise im Gesundheitswesen, sauber getrennt von der bestehenden Gutachten-Akquise – gleiches Login, gleiche Tabellen, aber alle Daten sind pro Modus gefiltert.
+## 1. Marketingliste bereinigen
 
-## Umschalter oben in der App
+- Neues Feld `leads.source = 'gmaps'` (Migration, Default `'manual'`).
+- `MarketingPanel` listet nur Leads mit `source='gmaps'` **und** vorhandener E-Mail.
+- Google-Maps-Import setzt `source='gmaps'` automatisch.
+- Bestehende manuelle/CSV-Leads bleiben in Tab „Lokal" sichtbar, verschwinden aber aus der Marketingliste.
+- Kein Auto-Push mehr aus `addLeads()` in die Cloud-Marketingliste – nur der Maps-Import schreibt dorthin.
 
-- Neuer Segmented-Switch im Header: **Gutachten | Datenschutz**.
-- Ausgewählter Modus wird pro Nutzer gespeichert (localStorage + URL-Search-Param `?modus=dsb`), damit Refresh und geteilte Links funktionieren.
-- Der Modus wird an alle Panels (Suche, Leads, Vorlagen, Outlook/Gmail-Ansicht, Ausschreibungen) durchgereicht.
+## 2. Suche verbessern (>60 Treffer via Grid)
 
-## Datenmodell – ein neues Feld, sonst nichts verschieben
+`searchPlaces` in `src/lib/sources.functions.ts` wird zu einer **Grid-Suche**:
 
-Neue Spalte `mode` auf:
-- `leads` → `mode text not null default 'gutachten'` (Werte: `gutachten` | `dsb`)
-- `email_templates` → dito
-- `source_searches` → dito
-- `tender_search_jobs` / `tenders` → dito (damit du DSB-relevante Ausschreibungen separat verwalten kannst)
+- PLZ → Zentrum (Geocoding, bereits vorhanden).
+- Wenn Radius > 5 km: Zentrum wird in ein Hex-Grid aus Teilzellen à ~4 km zerlegt (Standard-Radius/4).
+- Für jede Zelle: `places:searchNearby` (statt Textsearch) mit dem passenden Google-Typ (`doctor`, `hospital`, `dentist`, `pharmacy` …) + Pagination (3 Seiten × 20).
+- Deduplizierung über `place.id`.
+- Harte Obergrenze konfigurierbar (Default 300 Orte), damit Kosten kalkulierbar bleiben.
+- Fortschritt wird als Zahl (`X / Y Zellen`) im Response-Feld `progress` mitgeliefert und in der UI angezeigt.
 
-Vorteile: keine doppelten Tabellen, RLS bleibt unverändert (weiterhin `auth.uid()`), Bestandsdaten laufen automatisch als „gutachten" weiter.
+E-Mail-Scraping bleibt (parallel, 5 Worker), nur Orte **mit** E-Mail landen als Leads in der Marketingliste; alle Treffer erscheinen weiterhin in der Ergebnistabelle unterhalb der Suche zur Kontrolle.
 
-Indizes: `(user_id, mode)` auf `leads`, `source_searches`, `email_templates`.
+## 3. UI: Ein-Screen-Layout (Power Apps Stil)
 
-## Recherche-Presets für DSB (Zielgruppen)
+`MarketingPanel` wird umgebaut:
 
-Neue Standard-Presets, die beim ersten Wechsel in den DSB-Modus einmalig für den Nutzer angelegt werden (leer editierbar):
+```text
+┌──────────────────────────────────────────────────────────┐
+│ Command-Bar:  [PLZ] [Radius km] [Zielgruppe ▾] [Suchen] │
+│               Fortschritt: 42/64 Zellen · 187 Treffer   │
+├──────────────────────────────────────────────────────────┤
+│ Ergebnistabelle (scrollbar, sticky header)              │
+│ Name │ Stadt │ Adresse │ Telefon │ E-Mail │ Website │ ⋯ │
+└──────────────────────────────────────────────────────────┘
+```
 
-- **Arztpraxen & MVZ (DE)** – Suchbegriffe: „Arztpraxis", „MVZ", „Hausarzt", „Facharzt" + Region.
-- **Kliniken & Reha** – „Krankenhaus", „Klinik", „Reha-Klinik", „Tagesklinik".
-- **Zahnärzte, Physio, Heilpraktiker** – jeweils eigenes Preset.
-- **Apotheken, Pflegedienste, Labore** – jeweils eigenes Preset.
+- Kein Akkordeon, keine zweite Karte – alles sofort sichtbar.
+- Filter-Chips über der Tabelle: „Nur mit E-Mail" (Default an), „Nur neu importiert".
+- Sofort-Aktionen pro Zeile: `mailto:`, `tel:`, Website öffnen, „In Marketingliste behalten / entfernen".
+- Fluent-UI-Farben (Lila `#742774`) bleiben.
 
-Jedes Preset schreibt `mode='dsb'` in die neuen Leads, damit sie nur im DSB-Bereich auftauchen.
+## 4. Nicht enthalten
 
-Fachgebiet-Feld auf Leads wird im DSB-Modus mit der Zielgruppe (z. B. „Zahnarztpraxis") belegt.
+- Keine Änderung an Vorlagen, Outlook/Gmail-Sync, Ausschreibungen.
+- Keine neuen Zielgruppen-Presets in diesem Schritt (nur die bereits vorhandenen).
+- Keine Team-/Rollen-Funktionen.
 
-## Vorlagen-Bereich
+## Technische Details
 
-- Vorlagen-Panel filtert nach aktuellem Modus.
-- Im DSB-Modus zeigt es zunächst nur eine leere Kategorie „Datenschutz" – du schreibst die Anschreiben selbst (wie gewünscht).
-- Vorhandene Gutachten-Vorlagen bleiben im Gutachten-Modus sichtbar, im DSB-Modus unsichtbar.
-
-## Mail-Integration (Outlook + Gmail)
-
-- Beim Anlegen von Entwürfen wird das Vorlagen-Dropdown ebenfalls modus-gefiltert.
-- Sync (Sent / Reply / Bounce) läuft unverändert für alle Leads beider Modi – nur die Anzeige ist getrennt.
-- Optional: eigene Label-/Ordner-Hierarchie `Datenschutz/[Zielgruppe]` in Gmail/Outlook, parallel zu `Leads/[Land]/[Fachgebiet]` für Gutachten.
-
-## UI-Änderungen (Frontend)
-
-- `src/routes/index.tsx`: Header-Switch `Gutachten | Datenschutz`, gemeinsamer `ModeProvider` (React Context) für alle Panels.
-- Farbliche Kennung: dezenter Badge/Untertitel („Modus: Datenschutz"), Primärfarbe unverändert – bleibt seriös.
-- Alle Listen (`LeadsList`, `MarketingPanel`, `TemplatesPanel`, `SearchPanel`, `TendersPanel`) lesen `mode` aus Context und übergeben ihn an alle Server-Funktionsaufrufe.
-- CSV-Import legt Leads ebenfalls im aktuell aktiven Modus an.
-
-## Server-Funktionen anpassen
-
-Nur zusätzliche `mode`-Parameter, keine neuen Endpunkte:
-- `sources.functions.ts`: `runSourceSearch`, `listSources`, `upsertSource` bekommen `mode`.
-- `marketing.functions.ts` (Leads-CRUD): `listLeads`, `createLead`, `updateLead`, `importLeadsCsv` bekommen `mode`.
-- `gmail.functions.ts` / Outlook-Pendant: `createDraft` liest `mode` für Vorlagen-Auswahl und Labels.
-- `tenders.functions.ts`: Filter nach `mode`.
-
-Fallback: fehlt der Parameter, gilt `gutachten` (Rückwärtskompatibilität).
-
-## Migrations-Reihenfolge (eine Migration)
-
-1. `ALTER TABLE` für `mode`-Spalten mit Default `'gutachten'`.
-2. Check-Constraint `mode IN ('gutachten','dsb')`.
-3. Indizes anlegen.
-4. Bestehende Zeilen bleiben `gutachten`.
-
-## Was NICHT geändert wird
-
-- Bestehende Gutachten-Recherche, -Leads, -Vorlagen, -Outlook/Gmail-Logik – funktional unverändert.
-- RLS-Policies, Auth, Bezahlung/Sekrete.
-- Keine Team-Funktionen, keine neue Route – alles im bekannten Dashboard, nur mit Modus-Umschalter.
-
-## Optionale Erweiterung (später, jetzt nicht enthalten)
-
-- Eigene DSB-spezifische Lead-Felder (z. B. „Anzahl Mitarbeiter", „Verarbeitungsverzeichnis vorhanden") – kann später als JSON-Feld `mode_data` ergänzt werden, ohne die Kern-Tabelle aufzublähen.
+- Migration: `ALTER TABLE leads ADD COLUMN source text NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','csv','gmaps'))` + Index `(user_id, mode, source)`.
+- `upsertLeads` akzeptiert `source`; `runGmapsSearch` setzt `source='gmaps'`.
+- Grid-Berechnung: einfache Lat/Lng-Offsets (ohne externe Geo-Lib), ~111 km/° Lat, `cos(lat)` für Lng.
+- Rate-Limit: max. 8 parallele Places-Requests, kleine Pausen zwischen Seiten (Google verlangt kurz Wartezeit für `nextPageToken`).
+- Frontend hält den Fortschritt via Polling **nicht** – einfacher: Server-Fn streamt nicht, sondern gibt am Ende alles zurück; ein Client-seitiger Spinner + Zellen-Zähler wird aus der Response-Statistik gefüllt.
