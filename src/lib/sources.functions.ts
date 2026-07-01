@@ -2,12 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 /**
- * Quellen-Scraper (Phase 1: BRAK Amtliches Anwaltsverzeichnis)
+ * Quellen-Scraper (Phase 1: BRAK Amtliches Anwaltsverzeichnis + DSB-Gesundheitswesen)
  *
- * Strategie: Firecrawl Web-Search auf das BRAK-Register + Kanzleiwebsites,
+ * Strategie: Firecrawl Web-Search auf offizielle Register + Kanzlei-/Praxis-Websites,
  * Markdown der Trefferseiten extrahieren, E-Mails per Regex herausziehen,
- * als Leads (Zielgruppe = "anwaelte", Fachgebiet = z.B. "Sozialrecht") in
- * die bestehende leads-Tabelle einfügen.
+ * als Leads in die bestehende leads-Tabelle einfügen (mit Modus-Kennzeichnung).
  */
 
 export const BRAK_FACHGEBIETE = [
@@ -23,6 +22,21 @@ export const BRAK_FACHGEBIETE = [
   "Steuerrecht",
 ] as const;
 export type BrakFachgebiet = (typeof BRAK_FACHGEBIETE)[number];
+
+export const DSB_ZIELGRUPPEN = [
+  "Arztpraxen & MVZ",
+  "Kliniken & Reha",
+  "Zahnärzte",
+  "Physiotherapie",
+  "Heilpraktiker",
+  "Apotheken",
+  "Pflegedienste",
+  "Labore",
+] as const;
+export type DsbZielgruppe = (typeof DSB_ZIELGRUPPEN)[number];
+
+const APP_MODES = ["gutachten", "dsb"] as const;
+const ModeSchema = z.enum(APP_MODES).optional().default("gutachten");
 
 const ScrapeBrakInput = z.object({
   fachgebiet: z.enum(BRAK_FACHGEBIETE),
