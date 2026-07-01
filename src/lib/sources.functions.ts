@@ -1072,6 +1072,8 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         inserted: insertedCount,
         skipped: rowsToInsert.length - insertedCount,
         places: places.length,
+        cellsTotal: grid.cellsTotal,
+        cellsUsed: grid.cellsUsed,
         preview: enriched.map((e) => ({
           email: e.email,
           name: e.place.displayName?.text ?? null,
@@ -1081,6 +1083,7 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
           stadt: e.stadt,
         })),
       };
+
       await logSearch(result);
       return result;
     },
