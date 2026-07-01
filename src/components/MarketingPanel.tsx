@@ -27,10 +27,13 @@ import {
 } from "@/lib/marketing.functions";
 import {
   scrapeBrak,
+  scrapeDsbHealthcare,
   BRAK_FACHGEBIETE,
+  DSB_ZIELGRUPPEN,
   listSourceSearches,
   deleteSourceSearch,
   type BrakFachgebiet,
+  type DsbZielgruppe,
   type DbSourceSearch,
 } from "@/lib/sources.functions";
 import {
@@ -121,6 +124,14 @@ export function MarketingPanel() {
   const [brakLimit, setBrakLimit] = useState(10);
   const [brakLoading, setBrakLoading] = useState(false);
   const [brakLast, setBrakLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
+
+  // DSB-Recherche im Gesundheitswesen
+  const runDsb = useServerFn(scrapeDsbHealthcare);
+  const [dsbZielgruppe, setDsbZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
+  const [dsbOrt, setDsbOrt] = useState("");
+  const [dsbLimit, setDsbLimit] = useState(10);
+  const [dsbLoading, setDsbLoading] = useState(false);
+  const [dsbLast, setDsbLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
   const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
   const [land, setLand] = useState<LandCode>("DE");
