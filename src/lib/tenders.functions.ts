@@ -307,7 +307,7 @@ export const runTendersNow = createServerFn({ method: "POST" }).handler(async ()
  * wir rufen TED direkt ab und upserten die Treffer in die DB.
  */
 export const runManualTenderSearch = createServerFn({ method: "POST" })
-  .inputValidator((d: { schlagworte?: string[]; laender?: string[]; cpv_codes?: string[]; limit?: number }) => d)
+  .inputValidator((d: { schlagworte?: string[]; laender?: string[]; cpv_codes?: string[]; limit?: number; mode?: "gutachten" | "dsb" }) => d)
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const cpv = data.cpv_codes && data.cpv_codes.length > 0 ? data.cpv_codes : DEFAULT_CPV_CODES;
@@ -330,6 +330,7 @@ export const runManualTenderSearch = createServerFn({ method: "POST" })
         url: h.url,
         beschreibung: h.beschreibung?.slice(0, 4000) ?? null,
         status: "neu" as const,
+        mode: data.mode ?? "gutachten",
       }));
       const { data: inserted } = await supabaseAdmin
         .from("tenders")
