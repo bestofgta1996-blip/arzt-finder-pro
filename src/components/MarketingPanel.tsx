@@ -674,7 +674,8 @@ export function MarketingPanel() {
         </CardContent>
       </Card>
 
-      {/* Quellen: BRAK Anwaltsverzeichnis */}
+      {/* Quellen: BRAK Anwaltsverzeichnis – nur im Gutachten-Modus */}
+      {mode === "gutachten" && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
