@@ -924,17 +924,35 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
       }
 
       const hints = GMAPS_QUERY_HINTS[data.zielgruppe];
-      const radiusMeters = Math.min(data.radiusKm * 1000, 50000);
+      const primaryHint = hints[0] ?? data.zielgruppe;
+      const grid = await searchPlacesGrid(
+        data.zielgruppe,
+        primaryHint,
+        geo,
+        data.radiusKm,
+        data.limit,
+        gmapsKey,
+        lovableKey,
+      );
       const placesById = new Map<string, GmapsPlace>();
-      const perHint = Math.ceil(data.limit / hints.length) + 10;
-      for (const hint of hints) {
-        const results = await searchPlaces(hint, geo, radiusMeters, perHint, gmapsKey, lovableKey);
-        for (const p of results) {
-          if (!p.id || placesById.has(p.id)) continue;
-          placesById.set(p.id, p);
+      for (const p of grid.places) {
+        if (!p.id || placesById.has(p.id)) continue;
+        placesById.set(p.id, p);
+      }
+      // Extra Text-Suche für breitere Abdeckung, falls Grid wenig liefert.
+      if (placesById.size < Math.min(data.limit, 60)) {
+        const radiusMeters = Math.min(data.radiusKm * 1000, 50000);
+        for (const hint of hints.slice(0, 2)) {
+          const results = await searchPlaces(hint, geo, radiusMeters, 60, gmapsKey, lovableKey);
+          for (const p of results) {
+            if (!p.id || placesById.has(p.id)) continue;
+            placesById.set(p.id, p);
+          }
+          if (placesById.size >= data.limit) break;
         }
       }
       const places = Array.from(placesById.values()).slice(0, data.limit);
+
 
       // Extract city helper
       const cityFromAddress = (addr: string | undefined): string | null => {
