@@ -95,6 +95,7 @@ interface GmailState {
 }
 
 export function MarketingPanel() {
+  const { mode } = useMode();
   const fetchLeads = useServerFn(listLeads);
   const fetchJobs = useServerFn(listSearchJobs);
   const saveJob = useServerFn(upsertSearchJob);
@@ -169,12 +170,12 @@ export function MarketingPanel() {
     setLoading(true);
     try {
       const [l, j, o, s, g, t] = await Promise.all([
-        fetchLeads({ data: {} }),
-        fetchJobs(),
+        fetchLeads({ data: { mode } }),
+        fetchJobs({ data: { mode } }),
         fetchOutlookState(),
-        fetchSourceSearches(),
+        fetchSourceSearches({ data: { mode } }),
         fetchGmailStateFn(),
-        fetchTemplates(),
+        fetchTemplates({ data: { mode } }),
       ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
@@ -213,7 +214,7 @@ export function MarketingPanel() {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mode]);
 
   const leadsByLand = useMemo(() => {
     const map = new Map<LandCode, DbLead[]>();
