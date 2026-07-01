@@ -139,9 +139,19 @@ export function MarketingPanel() {
   const [gmapsZielgruppe, setGmapsZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
   const [gmapsPlz, setGmapsPlz] = useState("");
   const [gmapsRadius, setGmapsRadius] = useState(10);
-  const [gmapsLimit, setGmapsLimit] = useState(15);
+  const [gmapsLimit, setGmapsLimit] = useState(30);
   const [gmapsLoading, setGmapsLoading] = useState(false);
   const [gmapsLast, setGmapsLast] = useState<{ places: number; found: number; inserted: number; skipped: number } | null>(null);
+  const [gmapsResults, setGmapsResults] = useState<Array<{
+    email: string | null;
+    name: string | null;
+    website: string | null;
+    adresse: string | null;
+    telefon: string | null;
+    stadt: string | null;
+  }>>([]);
+  const [gmapsOnlyWithEmail, setGmapsOnlyWithEmail] = useState(false);
+
 
   const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
