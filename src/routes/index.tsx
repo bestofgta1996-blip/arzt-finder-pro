@@ -112,6 +112,7 @@ function HomeInner() {
           quelle_url: l.website ?? null,
           quelle_typ: l.quelle ?? null,
           gerichtsgutachter: l.gerichtsgutachter,
+          mode,
         };
       });
     if (cloudRows.length > 0) {
