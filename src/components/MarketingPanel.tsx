@@ -286,6 +286,7 @@ export function MarketingPanel() {
         zielgruppen: Array.from(newJob.zielgruppen),
         gerichtsgutachter: newJob.gerichtsgutachter,
         aktiv: true,
+        mode,
       },
     });
     if (res.ok) {
@@ -304,6 +305,7 @@ export function MarketingPanel() {
         zielgruppen: j.zielgruppen,
         gerichtsgutachter: j.gerichtsgutachter,
         aktiv: !j.aktiv,
+        mode,
       },
     });
     if (res.ok) void reload();
@@ -476,6 +478,7 @@ export function MarketingPanel() {
           body_text: tplEditor.body_text,
           body_html: tplEditor.body_html,
           is_default: tplEditor.is_default,
+          mode,
         },
       });
       if (r.ok) {
@@ -732,6 +735,7 @@ export function MarketingPanel() {
                       zielgruppen: ["anwaelte"],
                       gerichtsgutachter: false,
                       aktiv: true,
+                      mode,
                     },
                   });
                   if (res.ok) {
