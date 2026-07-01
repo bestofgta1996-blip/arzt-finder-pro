@@ -871,6 +871,8 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
       inserted: number;
       skipped: number;
       places: number;
+      cellsTotal?: number;
+      cellsUsed?: number;
       preview: Array<{
         email: string | null;
         name: string | null;
@@ -880,6 +882,7 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         stadt: string | null;
       }>;
     }> => {
+
       const logSearch = async (result: { ok: boolean; error?: string; found: number; inserted: number; skipped: number }) => {
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
