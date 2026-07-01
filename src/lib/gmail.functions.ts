@@ -665,16 +665,21 @@ export interface DbEmailTemplate {
   updated_at: string;
 }
 
-export const listEmailTemplates = createServerFn({ method: "GET" })
-  .handler(async (): Promise<{ ok: boolean; items: DbEmailTemplate[]; error?: string }> => {
+const APP_MODES_TPL = ["gutachten", "dsb"] as const;
+const ModeSchemaTpl = z.enum(APP_MODES_TPL).optional().default("gutachten");
+
+export const listEmailTemplates = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ mode: ModeSchemaTpl }).parse(d ?? {}))
+  .handler(async ({ data }): Promise<{ ok: boolean; items: DbEmailTemplate[]; error?: string }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    const { data: rows, error } = await supabaseAdmin
       .from("email_templates")
       .select("*")
+      .eq("mode", data.mode)
       .order("zielgruppe")
       .order("is_default", { ascending: false });
     if (error) return { ok: false, items: [], error: error.message };
-    return { ok: true, items: (data ?? []) as unknown as DbEmailTemplate[] };
+    return { ok: true, items: (rows ?? []) as unknown as DbEmailTemplate[] };
   });
 
 const UpsertTemplateInput = z.object({
@@ -685,6 +690,7 @@ const UpsertTemplateInput = z.object({
   body_text: z.string().min(1).max(20000),
   body_html: z.string().max(40000).optional().nullable(),
   is_default: z.boolean().optional().default(false),
+  mode: z.enum(APP_MODES_TPL).optional().default("gutachten"),
 });
 
 export const upsertEmailTemplate = createServerFn({ method: "POST" })
@@ -698,6 +704,7 @@ export const upsertEmailTemplate = createServerFn({ method: "POST" })
       body_text: data.body_text,
       body_html: data.body_html ?? null,
       is_default: data.is_default ?? false,
+      mode: data.mode ?? "gutachten",
     };
     if (data.id) {
       const { error } = await supabaseAdmin
