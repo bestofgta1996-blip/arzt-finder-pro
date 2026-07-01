@@ -600,36 +600,48 @@ async function searchPlaces(
   query: string,
   center: { lat: number; lng: number },
   radiusMeters: number,
-  pageSize: number,
+  totalWanted: number,
   apiKey: string,
   lovableKey: string,
 ): Promise<GmapsPlace[]> {
-  const res = await fetch(`${GMAPS_GATEWAY}/places/v1/places:searchText`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": apiKey,
-      "Content-Type": "application/json",
-      "X-Goog-FieldMask":
-        "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber",
-    },
-    body: JSON.stringify({
+  const all: GmapsPlace[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < 3 && all.length < totalWanted; page++) {
+    const body: Record<string, unknown> = {
       textQuery: query,
       languageCode: "de",
       regionCode: "DE",
-      pageSize,
+      pageSize: 20,
       locationBias: {
         circle: {
           center: { latitude: center.lat, longitude: center.lng },
           radius: radiusMeters,
         },
       },
-    }),
-  });
-  if (!res.ok) return [];
-  const json = (await res.json()) as { places?: GmapsPlace[] };
-  return json.places ?? [];
+    };
+    if (pageToken) body.pageToken = pageToken;
+    const res = await fetch(`${GMAPS_GATEWAY}/places/v1/places:searchText`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableKey}`,
+        "X-Connection-Api-Key": apiKey,
+        "Content-Type": "application/json",
+        "X-Goog-FieldMask":
+          "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,nextPageToken",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) break;
+    const json = (await res.json()) as { places?: GmapsPlace[]; nextPageToken?: string };
+    for (const p of json.places ?? []) all.push(p);
+    if (!json.nextPageToken) break;
+    pageToken = json.nextPageToken;
+    // Google requires a short delay before nextPageToken is valid
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return all;
 }
+
 
 function deobfuscateEmails(text: string): string {
   return text
