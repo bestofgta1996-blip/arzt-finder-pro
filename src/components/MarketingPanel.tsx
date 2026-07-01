@@ -794,6 +794,97 @@ export function MarketingPanel() {
           </div>
         </CardContent>
       </Card>
+      )}
+
+      {/* Quellen: DSB Gesundheitswesen – nur im Datenschutz-Modus */}
+      {mode === "dsb" && (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4" /> Quelle: DSB-Recherche im Gesundheitswesen
+            <Badge variant="outline" className="text-[10px]">Deutschland</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Sucht auf öffentlichen Websites nach Praxen, Kliniken, Apotheken und weiteren
+            Gesundheitsdienstleistern mit E-Mail-Kontakt – für die Ansprache als externer
+            Datenschutzbeauftragter (Zielgruppe: <b>Gesundheitswesen</b>).
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="sm:col-span-1">
+              <Label className="text-xs">Zielgruppe</Label>
+              <Select value={dsbZielgruppe} onValueChange={(v) => setDsbZielgruppe(v as DsbZielgruppe)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DSB_ZIELGRUPPEN.map((z) => (
+                    <SelectItem key={z} value={z}>{z}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs">Ort / Stadt</Label>
+              <Input
+                value={dsbOrt}
+                onChange={(e) => setDsbOrt(e.target.value)}
+                placeholder="z. B. München, Hamburg, Region Stuttgart…"
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <Label className="text-xs">Max. Treffer</Label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={dsbLimit}
+                onChange={(e) => setDsbLimit(Math.max(1, Math.min(30, Number(e.target.value) || 10)))}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {dsbLast ? (
+                <span>
+                  Letzter Lauf: {dsbLast.found} Treffer mit E-Mail · <b>{dsbLast.inserted}</b> neu importiert · {dsbLast.skipped} Duplikate
+                </span>
+              ) : (
+                <span>Quellen: öffentliche Praxis-, Klinik- und Apotheken-Websites (Impressum)</span>
+              )}
+            </div>
+            <Button
+              onClick={async () => {
+                if (!dsbOrt.trim()) {
+                  toast.error("Bitte einen Ort angeben");
+                  return;
+                }
+                setDsbLoading(true);
+                try {
+                  const r = await runDsb({
+                    data: { zielgruppe: dsbZielgruppe, ort: dsbOrt.trim(), limit: dsbLimit },
+                  });
+                  if (!r.ok) {
+                    toast.error(r.error ?? "Suche fehlgeschlagen");
+                  } else {
+                    setDsbLast({ found: r.found, inserted: r.inserted, skipped: r.skipped });
+                    toast.success(`${r.inserted} neue DSB-Leads importiert (${r.found} gefunden)`);
+                    await reload();
+                  }
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Fehler bei DSB-Suche");
+                } finally {
+                  setDsbLoading(false);
+                }
+              }}
+              disabled={dsbLoading}
+            >
+              {dsbLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
+              Suchen &amp; importieren
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      )}
 
       {/* Suchverlauf */}
       <Card>
