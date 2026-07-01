@@ -27,10 +27,13 @@ import {
 } from "@/lib/marketing.functions";
 import {
   scrapeBrak,
+  scrapeDsbHealthcare,
   BRAK_FACHGEBIETE,
+  DSB_ZIELGRUPPEN,
   listSourceSearches,
   deleteSourceSearch,
   type BrakFachgebiet,
+  type DsbZielgruppe,
   type DbSourceSearch,
 } from "@/lib/sources.functions";
 import {
@@ -47,7 +50,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save, FileEdit, Tag, MailPlus } from "lucide-react";
+import { useMode } from "@/hooks/useMode";
+import { Loader2, Trash2, Mail, CheckCircle2, RefreshCw, ExternalLink, Plus, Pause, Play, FolderTree, Folder, FolderOpen, AlertTriangle, Inbox, Send, Scale, Download, History, Save, FileEdit, Tag, MailPlus, ShieldCheck } from "lucide-react";
 
 const STATUS_LABEL: Record<LeadStatusDb, string> = {
   neu: "Neu",
@@ -94,6 +98,7 @@ interface GmailState {
 }
 
 export function MarketingPanel() {
+  const { mode } = useMode();
   const fetchLeads = useServerFn(listLeads);
   const fetchJobs = useServerFn(listSearchJobs);
   const saveJob = useServerFn(upsertSearchJob);
@@ -119,6 +124,14 @@ export function MarketingPanel() {
   const [brakLimit, setBrakLimit] = useState(10);
   const [brakLoading, setBrakLoading] = useState(false);
   const [brakLast, setBrakLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
+
+  // DSB-Recherche im Gesundheitswesen
+  const runDsb = useServerFn(scrapeDsbHealthcare);
+  const [dsbZielgruppe, setDsbZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
+  const [dsbOrt, setDsbOrt] = useState("");
+  const [dsbLimit, setDsbLimit] = useState(10);
+  const [dsbLoading, setDsbLoading] = useState(false);
+  const [dsbLast, setDsbLast] = useState<{ found: number; inserted: number; skipped: number } | null>(null);
   const [sourceSearches, setSourceSearches] = useState<DbSourceSearch[]>([]);
 
   const [land, setLand] = useState<LandCode>("DE");
@@ -168,12 +181,12 @@ export function MarketingPanel() {
     setLoading(true);
     try {
       const [l, j, o, s, g, t] = await Promise.all([
-        fetchLeads({ data: {} }),
-        fetchJobs(),
+        fetchLeads({ data: { mode } }),
+        fetchJobs({ data: { mode } }),
         fetchOutlookState(),
-        fetchSourceSearches(),
+        fetchSourceSearches({ data: { mode } }),
         fetchGmailStateFn(),
-        fetchTemplates(),
+        fetchTemplates({ data: { mode } }),
       ]);
       if (l.ok) setLeads(l.leads);
       if (j.ok) setJobs(j.jobs);
@@ -212,7 +225,7 @@ export function MarketingPanel() {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mode]);
 
   const leadsByLand = useMemo(() => {
     const map = new Map<LandCode, DbLead[]>();
@@ -284,6 +297,7 @@ export function MarketingPanel() {
         zielgruppen: Array.from(newJob.zielgruppen),
         gerichtsgutachter: newJob.gerichtsgutachter,
         aktiv: true,
+        mode,
       },
     });
     if (res.ok) {
@@ -302,6 +316,7 @@ export function MarketingPanel() {
         zielgruppen: j.zielgruppen,
         gerichtsgutachter: j.gerichtsgutachter,
         aktiv: !j.aktiv,
+        mode,
       },
     });
     if (res.ok) void reload();
@@ -474,6 +489,7 @@ export function MarketingPanel() {
           body_text: tplEditor.body_text,
           body_html: tplEditor.body_html,
           is_default: tplEditor.is_default,
+          mode,
         },
       });
       if (r.ok) {
@@ -658,7 +674,8 @@ export function MarketingPanel() {
         </CardContent>
       </Card>
 
-      {/* Quellen: BRAK Anwaltsverzeichnis */}
+      {/* Quellen: BRAK Anwaltsverzeichnis – nur im Gutachten-Modus */}
+      {mode === "gutachten" && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -730,6 +747,7 @@ export function MarketingPanel() {
                       zielgruppen: ["anwaelte"],
                       gerichtsgutachter: false,
                       aktiv: true,
+                      mode,
                     },
                   });
                   if (res.ok) {
@@ -776,6 +794,97 @@ export function MarketingPanel() {
           </div>
         </CardContent>
       </Card>
+      )}
+
+      {/* Quellen: DSB Gesundheitswesen – nur im Datenschutz-Modus */}
+      {mode === "dsb" && (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4" /> Quelle: DSB-Recherche im Gesundheitswesen
+            <Badge variant="outline" className="text-[10px]">Deutschland</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Sucht auf öffentlichen Websites nach Praxen, Kliniken, Apotheken und weiteren
+            Gesundheitsdienstleistern mit E-Mail-Kontakt – für die Ansprache als externer
+            Datenschutzbeauftragter (Zielgruppe: <b>Gesundheitswesen</b>).
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="sm:col-span-1">
+              <Label className="text-xs">Zielgruppe</Label>
+              <Select value={dsbZielgruppe} onValueChange={(v) => setDsbZielgruppe(v as DsbZielgruppe)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DSB_ZIELGRUPPEN.map((z) => (
+                    <SelectItem key={z} value={z}>{z}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs">Ort / Stadt</Label>
+              <Input
+                value={dsbOrt}
+                onChange={(e) => setDsbOrt(e.target.value)}
+                placeholder="z. B. München, Hamburg, Region Stuttgart…"
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <Label className="text-xs">Max. Treffer</Label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={dsbLimit}
+                onChange={(e) => setDsbLimit(Math.max(1, Math.min(30, Number(e.target.value) || 10)))}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {dsbLast ? (
+                <span>
+                  Letzter Lauf: {dsbLast.found} Treffer mit E-Mail · <b>{dsbLast.inserted}</b> neu importiert · {dsbLast.skipped} Duplikate
+                </span>
+              ) : (
+                <span>Quellen: öffentliche Praxis-, Klinik- und Apotheken-Websites (Impressum)</span>
+              )}
+            </div>
+            <Button
+              onClick={async () => {
+                if (!dsbOrt.trim()) {
+                  toast.error("Bitte einen Ort angeben");
+                  return;
+                }
+                setDsbLoading(true);
+                try {
+                  const r = await runDsb({
+                    data: { zielgruppe: dsbZielgruppe, ort: dsbOrt.trim(), limit: dsbLimit },
+                  });
+                  if (!r.ok) {
+                    toast.error(r.error ?? "Suche fehlgeschlagen");
+                  } else {
+                    setDsbLast({ found: r.found, inserted: r.inserted, skipped: r.skipped });
+                    toast.success(`${r.inserted} neue DSB-Leads importiert (${r.found} gefunden)`);
+                    await reload();
+                  }
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Fehler bei DSB-Suche");
+                } finally {
+                  setDsbLoading(false);
+                }
+              }}
+              disabled={dsbLoading}
+            >
+              {dsbLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
+              Suchen &amp; importieren
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      )}
 
       {/* Suchverlauf */}
       <Card>

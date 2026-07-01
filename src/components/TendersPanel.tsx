@@ -31,6 +31,7 @@ import {
   type TenderStatus,
 } from "@/lib/tenders.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useMode } from "@/hooks/useMode";
 
 const STATUS_LABEL: Record<TenderStatus, string> = {
   neu: "Neu",
@@ -53,6 +54,7 @@ function buildPortalUrl(portal: DbPortal, q: string): string {
 }
 
 export function TendersPanel() {
+  const { mode } = useMode();
   const fetchTenders = useServerFn(listTenders);
   const fetchPortals = useServerFn(listPortals);
   const togglePortalFn = useServerFn(togglePortal);
@@ -76,7 +78,7 @@ export function TendersPanel() {
     setLoading(true);
     try {
       const [t, p] = await Promise.all([
-        fetchTenders({ data: { status: statusFilter, land: landFilter || undefined } }),
+        fetchTenders({ data: { status: statusFilter, land: landFilter || undefined, mode } }),
         fetchPortals(),
       ]);
       setTenders(t);
@@ -93,7 +95,7 @@ export function TendersPanel() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, landFilter]);
+  }, [statusFilter, landFilter, mode]);
 
   // Realtime auf tenders
   useEffect(() => {
@@ -160,7 +162,7 @@ export function TendersPanel() {
         .map((s) => s.trim().toUpperCase())
         .filter(Boolean);
       const res = (await runManual({
-        data: { schlagworte, laender, limit: 50 },
+        data: { schlagworte, laender, limit: 50, mode },
       })) as { ok: boolean; treffer: number; neu: number };
       toast.success(`Manuelle Suche: ${res.treffer} Treffer, ${res.neu} neu`);
       await load();

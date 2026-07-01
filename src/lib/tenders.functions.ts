@@ -49,13 +49,21 @@ export interface DbPortal {
   aktiv: boolean;
 }
 
-export const listTenders = createServerFn({ method: "GET" })
-  .inputValidator((d: { status?: TenderStatus | "alle"; land?: string }) => d)
+const APP_MODES_T = ["gutachten", "dsb"] as const;
+const ModeSchemaT = z.enum(APP_MODES_T).optional().default("gutachten");
+
+export const listTenders = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({
+    status: z.enum([...TENDER_STATUS, "alle"] as const).optional(),
+    land: z.string().optional(),
+    mode: ModeSchemaT,
+  }).parse(d ?? {}))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin
       .from("tenders")
       .select("*")
+      .eq("mode", data.mode)
       .order("qualitaet_score", { ascending: false })
       .order("gefunden_am", { ascending: false })
       .limit(500);
@@ -109,15 +117,18 @@ export const togglePortal = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const listTenderSearchJobs = createServerFn({ method: "GET" }).handler(async () => {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin
-    .from("tender_search_jobs")
-    .select("*")
-    .order("erstellt_am", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
-});
+export const listTenderSearchJobs = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ mode: ModeSchemaT }).parse(d ?? {}))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows, error } = await supabaseAdmin
+      .from("tender_search_jobs")
+      .select("*")
+      .eq("mode", data.mode)
+      .order("erstellt_am", { ascending: false });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
 
 const SearchJobInput = z.object({
   id: z.string().optional(),
@@ -126,32 +137,29 @@ const SearchJobInput = z.object({
   laender: z.array(z.string()).default(["DE", "AT", "CH", "EU"]),
   schlagworte: z.array(z.string()).default([]),
   aktiv: z.boolean().default(true),
+  mode: z.enum(APP_MODES_T).optional().default("gutachten"),
 });
 
 export const upsertTenderSearchJob = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => SearchJobInput.parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const row = {
+      name: data.name,
+      cpv_codes: data.cpv_codes,
+      laender: data.laender,
+      schlagworte: data.schlagworte,
+      aktiv: data.aktiv,
+      mode: data.mode ?? "gutachten",
+    };
     if (data.id) {
       const { error } = await supabaseAdmin
         .from("tender_search_jobs")
-        .update({
-          name: data.name,
-          cpv_codes: data.cpv_codes,
-          laender: data.laender,
-          schlagworte: data.schlagworte,
-          aktiv: data.aktiv,
-        })
+        .update(row)
         .eq("id", data.id);
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await supabaseAdmin.from("tender_search_jobs").insert({
-        name: data.name,
-        cpv_codes: data.cpv_codes,
-        laender: data.laender,
-        schlagworte: data.schlagworte,
-        aktiv: data.aktiv,
-      });
+      const { error } = await supabaseAdmin.from("tender_search_jobs").insert(row);
       if (error) throw new Error(error.message);
     }
     return { ok: true };
@@ -168,6 +176,9 @@ export const deleteTenderSearchJob = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+
+
 
 /**
  * TED – Tenders Electronic Daily Search API (v3).
@@ -296,7 +307,7 @@ export const runTendersNow = createServerFn({ method: "POST" }).handler(async ()
  * wir rufen TED direkt ab und upserten die Treffer in die DB.
  */
 export const runManualTenderSearch = createServerFn({ method: "POST" })
-  .inputValidator((d: { schlagworte?: string[]; laender?: string[]; cpv_codes?: string[]; limit?: number }) => d)
+  .inputValidator((d: { schlagworte?: string[]; laender?: string[]; cpv_codes?: string[]; limit?: number; mode?: "gutachten" | "dsb" }) => d)
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const cpv = data.cpv_codes && data.cpv_codes.length > 0 ? data.cpv_codes : DEFAULT_CPV_CODES;
@@ -319,6 +330,7 @@ export const runManualTenderSearch = createServerFn({ method: "POST" })
         url: h.url,
         beschreibung: h.beschreibung?.slice(0, 4000) ?? null,
         status: "neu" as const,
+        mode: data.mode ?? "gutachten",
       }));
       const { data: inserted } = await supabaseAdmin
         .from("tenders")
