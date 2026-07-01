@@ -247,6 +247,7 @@ export const scrapeBrak = createServerFn({ method: "POST" })
         quelle_url: c.quelle_url.slice(0, 800),
         quelle_typ: "brak",
         gerichtsgutachter: false,
+        mode: "gutachten" as const,
       }));
 
       if (leadsToInsert.length === 0) {
