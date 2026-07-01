@@ -557,8 +557,21 @@ const ScrapeGmapsInput = z.object({
   zielgruppe: z.enum(DSB_ZIELGRUPPEN),
   plz: z.string().trim().regex(/^\d{4,5}$/, "PLZ muss 4–5 Ziffern haben"),
   radiusKm: z.number().int().min(1).max(50).optional().default(10),
-  limit: z.number().int().min(1).max(60).optional().default(30),
+  limit: z.number().int().min(1).max(300).optional().default(120),
 });
+
+// Google Places (New) primary type per Zielgruppe – narrows nearby-search results.
+const GMAPS_INCLUDED_TYPES: Record<DsbZielgruppe, string[]> = {
+  "Arztpraxen & MVZ": ["doctor"],
+  "Kliniken & Reha": ["hospital"],
+  "Zahnärzte": ["dentist"],
+  "Physiotherapie": ["physiotherapist"],
+  "Heilpraktiker": [],
+  "Apotheken": ["pharmacy"],
+  "Pflegedienste": [],
+  "Labore": ["medical_lab"],
+};
+
 
 
 interface GmapsPlace {
