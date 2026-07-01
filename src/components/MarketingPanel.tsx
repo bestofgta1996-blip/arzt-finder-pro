@@ -909,23 +909,24 @@ export function MarketingPanel() {
 
       {/* Karten-Suche: Google Maps – nur im Datenschutz-Modus */}
       {mode === "dsb" && (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <ShieldCheck className="size-4" /> Karten-Suche (Google Maps)
-            <Badge variant="outline" className="text-[10px]">PLZ + Radius</Badge>
-          </CardTitle>
+      <Card className="border-t-4 border-t-[#742774]">
+        <CardHeader className="pb-2 bg-[#faf9f8] border-b">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base flex items-center gap-2 text-[#323130]">
+              <ShieldCheck className="size-4 text-[#742774]" /> Kontakt-Suche · Gesundheitswesen
+            </CardTitle>
+            <div className="text-xs text-muted-foreground">
+              Quelle: Google Maps + Website-Impressum
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Findet Praxen, Kliniken, Apotheken & Pflegedienste geografisch präzise über Google Maps
-            und extrahiert die Kontakt-E-Mail automatisch aus dem Impressum der Website.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="col-span-2 sm:col-span-2">
-              <Label className="text-xs">Zielgruppe</Label>
+        <CardContent className="p-0">
+          {/* Kompakte Command-Bar (Power-Apps-Stil) */}
+          <div className="grid grid-cols-2 md:grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr_auto] gap-2 items-end p-3 border-b bg-white">
+            <div>
+              <Label className="text-[11px] uppercase tracking-wide text-[#605e5c]">Zielgruppe</Label>
               <Select value={gmapsZielgruppe} onValueChange={(v) => setGmapsZielgruppe(v as DsbZielgruppe)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {DSB_ZIELGRUPPEN.map((z) => (
                     <SelectItem key={z} value={z}>{z}</SelectItem>
@@ -934,8 +935,9 @@ export function MarketingPanel() {
               </Select>
             </div>
             <div>
-              <Label className="text-xs">PLZ</Label>
+              <Label className="text-[11px] uppercase tracking-wide text-[#605e5c]">PLZ</Label>
               <Input
+                className="h-8"
                 inputMode="numeric"
                 maxLength={5}
                 value={gmapsPlz}
@@ -944,8 +946,9 @@ export function MarketingPanel() {
               />
             </div>
             <div>
-              <Label className="text-xs">Radius (km)</Label>
+              <Label className="text-[11px] uppercase tracking-wide text-[#605e5c]">Radius (km)</Label>
               <Input
+                className="h-8"
                 type="number"
                 min={1}
                 max={50}
@@ -954,34 +957,26 @@ export function MarketingPanel() {
               />
             </div>
             <div>
-              <Label className="text-xs">Max. Treffer</Label>
+              <Label className="text-[11px] uppercase tracking-wide text-[#605e5c]">Anzahl</Label>
               <Input
+                className="h-8"
                 type="number"
                 min={1}
-                max={30}
+                max={60}
                 value={gmapsLimit}
-                onChange={(e) => setGmapsLimit(Math.max(1, Math.min(30, Number(e.target.value) || 15)))}
+                onChange={(e) => setGmapsLimit(Math.max(1, Math.min(60, Number(e.target.value) || 30)))}
               />
             </div>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xs text-muted-foreground">
-              {gmapsLast ? (
-                <span>
-                  Letzter Lauf: {gmapsLast.places} Orte gefunden · {gmapsLast.found} mit E-Mail ·{" "}
-                  <b>{gmapsLast.inserted}</b> neu importiert · {gmapsLast.skipped} Duplikate
-                </span>
-              ) : (
-                <span>Quelle: Google Maps Places (New) + Impressum-Scraping</span>
-              )}
-            </div>
             <Button
+              size="sm"
+              className="h-8 bg-[#742774] hover:bg-[#5c1f5c] text-white"
               onClick={async () => {
                 if (!/^\d{4,5}$/.test(gmapsPlz)) {
                   toast.error("Bitte eine gültige deutsche PLZ eingeben (4–5 Ziffern)");
                   return;
                 }
                 setGmapsLoading(true);
+                setGmapsResults([]);
                 try {
                   const r = await runGmaps({
                     data: {
@@ -995,8 +990,9 @@ export function MarketingPanel() {
                     toast.error(r.error ?? "Suche fehlgeschlagen");
                   } else {
                     setGmapsLast({ places: r.places, found: r.found, inserted: r.inserted, skipped: r.skipped });
+                    setGmapsResults(r.preview);
                     toast.success(
-                      `${r.inserted} neue Leads importiert (${r.places} Orte, ${r.found} mit E-Mail)`,
+                      `${r.places} Orte · ${r.found} mit E-Mail · ${r.inserted} neu importiert`,
                     );
                     await reload();
                   }
@@ -1008,13 +1004,104 @@ export function MarketingPanel() {
               }}
               disabled={gmapsLoading}
             >
-              {gmapsLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Download className="size-4 mr-2" />}
-              Suchen &amp; importieren
+              {gmapsLoading ? <Loader2 className="size-4 animate-spin mr-1.5" /> : <Download className="size-4 mr-1.5" />}
+              Suchen
             </Button>
           </div>
+
+          {/* Statusleiste */}
+          <div className="flex items-center justify-between gap-3 px-3 py-2 bg-[#f3f2f1] border-b text-xs text-[#605e5c]">
+            <div>
+              {gmapsLast ? (
+                <span>
+                  <b className="text-[#323130]">{gmapsLast.places}</b> Orte · <b className="text-[#107c10]">{gmapsLast.found}</b> mit E-Mail · <b>{gmapsLast.inserted}</b> neu importiert · {gmapsLast.skipped} Duplikate
+                </span>
+              ) : (
+                <span>Bereit. PLZ eingeben und Suchen klicken.</span>
+              )}
+            </div>
+            {gmapsResults.length > 0 && (
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <Checkbox
+                  checked={gmapsOnlyWithEmail}
+                  onCheckedChange={(v) => setGmapsOnlyWithEmail(Boolean(v))}
+                />
+                <span>Nur mit E-Mail</span>
+              </label>
+            )}
+          </div>
+
+          {/* Ergebnistabelle */}
+          {gmapsResults.length > 0 && (
+            <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-[#faf9f8] border-b text-[11px] uppercase tracking-wide text-[#605e5c]">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium">Name</th>
+                    <th className="text-left px-3 py-2 font-medium">Adresse</th>
+                    <th className="text-left px-3 py-2 font-medium">Telefon</th>
+                    <th className="text-left px-3 py-2 font-medium">E-Mail</th>
+                    <th className="text-left px-3 py-2 font-medium">Website</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gmapsResults
+                    .filter((r) => !gmapsOnlyWithEmail || r.email)
+                    .map((r, i) => (
+                    <tr
+                      key={i}
+                      className={`border-b hover:bg-[#f3f2f1] ${r.email ? "" : "bg-white"}`}
+                    >
+                      <td className="px-3 py-2 font-medium text-[#323130] max-w-[240px]">
+                        <div className="truncate" title={r.name ?? ""}>{r.name ?? "—"}</div>
+                        {r.stadt && <div className="text-[11px] text-[#605e5c]">{r.stadt}</div>}
+                      </td>
+                      <td className="px-3 py-2 text-[#323130] max-w-[280px]">
+                        <div className="truncate" title={r.adresse ?? ""}>{r.adresse ?? "—"}</div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {r.telefon ? (
+                          <a className="text-[#0078d4] hover:underline" href={`tel:${r.telefon}`}>{r.telefon}</a>
+                        ) : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {r.email ? (
+                          <a className="text-[#0078d4] hover:underline font-medium" href={`mailto:${r.email}`}>{r.email}</a>
+                        ) : (
+                          <span className="text-[#a19f9d] italic text-xs">keine gefunden</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 max-w-[200px]">
+                        {r.website ? (
+                          <a
+                            className="text-[#0078d4] hover:underline inline-flex items-center gap-1 truncate max-w-full"
+                            href={r.website}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            title={r.website}
+                          >
+                            <ExternalLink className="size-3 shrink-0" />
+                            <span className="truncate">{r.website.replace(/^https?:\/\//, "")}</span>
+                          </a>
+                        ) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {gmapsLoading && gmapsResults.length === 0 && (
+            <div className="p-8 text-center text-sm text-[#605e5c]">
+              <Loader2 className="size-5 animate-spin mx-auto mb-2" />
+              Suche läuft — Google Maps abfragen und Websites nach E-Mails scannen…
+            </div>
+          )}
         </CardContent>
       </Card>
       )}
+
 
       {/* Suchverlauf */}
       <Card>
