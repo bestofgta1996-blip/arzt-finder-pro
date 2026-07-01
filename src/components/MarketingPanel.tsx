@@ -28,6 +28,7 @@ import {
 import {
   scrapeBrak,
   scrapeDsbHealthcare,
+  scrapeGoogleMapsHealthcare,
   BRAK_FACHGEBIETE,
   DSB_ZIELGRUPPEN,
   listSourceSearches,
