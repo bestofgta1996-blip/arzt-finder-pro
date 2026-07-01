@@ -557,8 +557,9 @@ const ScrapeGmapsInput = z.object({
   zielgruppe: z.enum(DSB_ZIELGRUPPEN),
   plz: z.string().trim().regex(/^\d{4,5}$/, "PLZ muss 4–5 Ziffern haben"),
   radiusKm: z.number().int().min(1).max(50).optional().default(10),
-  limit: z.number().int().min(1).max(30).optional().default(15),
+  limit: z.number().int().min(1).max(60).optional().default(30),
 });
+
 
 interface GmapsPlace {
   id?: string;
