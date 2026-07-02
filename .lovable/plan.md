@@ -1,78 +1,40 @@
 
 ## Ziel
 
-Zwei Probleme lösen:
+Die Karten-Recherche im Datenschutz-Modus einmalig automatisch durchlaufen lassen, bis **mindestens 100 Leads mit E-Mail** in der Marketingliste stehen. Dabei sowohl Google Maps als auch OpenStreetMap nutzen, Fehler beheben falls die Suche aktuell nicht läuft.
 
-1. **„Keine E-Mails gefunden"** – Google Maps liefert für viele Praxen entweder keine Website oder Firecrawl findet auf `/impressum` nichts, weil viele Seiten JS-rendern, PDF-Impressen nutzen oder E-Mails als Bild einbetten.
-2. **OpenStreetMap wird noch nicht genutzt** – OSM (Overpass API) enthält für Ärzte/Kliniken/Apotheken oft direkt `contact:email`, `email`, `contact:website` und `phone` als Tags. Kein Scraping, kostenlos, keine API-Key nötig.
+## Vorgehen
 
-## 1. Neuer OSM-Button in der Command-Bar
+### 1. Runtime-Fehler prüfen
+Aktuell meldet die Vorschau `TypeError: null is not an object (evaluating 'resolveDispatcher().use')` – das ist ein React-Hook-Fehler aus `AwaitInner` (TanStack Router). Vor dem Testlauf checken, ob das die Suche blockiert, und ggf. die betroffene Stelle (vermutlich ein `use()`-Aufruf in einem Loader/Await) korrigieren.
 
-Neben „Suchen & importieren" (Google Maps) kommt ein zweiter Button:
+### 2. Automatischer Testlauf-Modus
+Neuen Button **„Testlauf bis 100"** in der Command Bar hinzufügen (nur im Datenschutz-Modus sichtbar). Beim Klick:
 
+1. Startet mit der aktuell gewählten Zielgruppe + PLZ + Radius.
+2. Ruft nacheinander `scrapeGoogleMapsHealthcare` und `scrapeOsmHealthcare` auf.
+3. Wenn danach < 100 Leads mit E-Mail in der Marketingliste: automatisch mit den nächsten Zielgruppen aus `DSB_ZIELGRUPPEN` fortfahren (Reihenfolge: Arztpraxen & MVZ → Zahnärzte → Kliniken → Physiotherapie → Apotheken → Pflegedienste → Heilpraktiker → Labore).
+4. Wenn Zielgruppen erschöpft und immer noch < 100: Radius um 10 km erhöhen (max. 50 km) und von vorne.
+5. Abbruch sobald 100 erreicht **oder** kein neuer Treffer mehr in einer kompletten Runde (Schutz vor Endlosschleife).
+
+### 3. Fortschrittsanzeige
+Während des Laufs eine Progress-Zeile zeigen:
 ```
-[ Google Maps suchen ]   [ OpenStreetMap suchen ]
+Testlauf: 47 / 100 · aktuell: Zahnärzte · Radius 15 km · 3. Iteration
 ```
+Mit Abbrechen-Button.
 
-- Gleiche Eingaben: Zielgruppe, PLZ, Radius, Max. Treffer.
-- OSM-Button ruft neue Server-Fn `scrapeOsmHealthcare` auf.
-- Ergebnisse landen in derselben Tabelle „Aktuelle Treffer" und – falls E-Mail vorhanden – in der Marketingliste (`quelle_typ='openstreetmap'`).
-- Statuszeile zeigt Herkunft: „OSM · 87 Orte · 41 mit E-Mail".
+### 4. Reporting am Ende
+Toast + Statuszeile: `Testlauf beendet: 100 Leads · 6 Zielgruppen · 2 Quellen · X min`.
 
-## 2. Neue Server-Funktion `scrapeOsmHealthcare`
-
-Ablauf:
-
-1. PLZ → Zentrum (bereits vorhandener `geocodePlz` via Google-Geocoding-Gateway; alternativ Nominatim, wenn kein Google-Key).
-2. Overpass-API-Query (`https://overpass-api.de/api/interpreter`) mit Radius um Zentrum. Mapping Zielgruppe → OSM-Tag:
-   - Arztpraxen & MVZ → `amenity=doctors` / `healthcare=doctor`
-   - Kliniken & Reha → `amenity=hospital` / `healthcare=hospital`
-   - Zahnärzte → `amenity=dentist` / `healthcare=dentist`
-   - Physiotherapie → `healthcare=physiotherapist`
-   - Heilpraktiker → `healthcare=alternative`
-   - Apotheken → `amenity=pharmacy`
-   - Pflegedienste → `amenity=nursing_home` / `healthcare=nursing`
-   - Labore → `healthcare=laboratory`
-3. Aus dem Response direkt lesen:
-   - `name` = `tags.name`
-   - `email` = `tags["contact:email"] || tags.email`
-   - `phone` = `tags["contact:phone"] || tags.phone`
-   - `website` = `tags["contact:website"] || tags.website`
-   - `stadt` = `tags["addr:city"]`, `adresse` = `addr:street + addr:housenumber + addr:postcode`
-4. Für Treffer **ohne** E-Mail aber **mit** Website: gleiches Firecrawl-Fallback wie bei Google Maps.
-5. Dedupe über E-Mail, Insert in `leads` mit `quelle_typ='openstreetmap'`.
-
-Keine externen API-Keys – Overpass ist offen; einmalige User-Agent-Header + kleine Wartepause zwischen Retries.
-
-## 3. E-Mail-Extraktion verbessern (gilt für beide Quellen)
-
-Die bestehende `scrapeEmailFromWebsite` in `src/lib/sources.functions.ts` wird erweitert:
-
-- **Mehr Pfade** probieren: zusätzlich `/impressum/`, `/legal`, `/rechtliches`, `/imprint`, `/kontakt/`, `/ueber-uns`, `/team`, `/praxis`.
-- **Google-Suche als Fallback**: wenn direktes Scraping 0 E-Mails liefert, ein Firecrawl-`search` mit `site:<domain> "@<domain>"` OR `"@t-online.de"` OR generisch `"mail" site:<domain>` – oft finden sich E-Mails in Cache/Snippets.
-- **Bild-Mail-Heuristik**: wenn `<img alt="email">` oder `mailto:` mit JS-Encoding, Regex auf `data-cfemail` (Cloudflare) → decodieren.
-- **Trefferzahl-Debug**: pro Lauf mitliefern, wie viele Orte Website hatten, wie viele davon E-Mail lieferten, damit der User sieht warum die Quote niedrig ist.
-- **Firecrawl `waitFor`** = 3000 ms auf `/impressum`, damit React-Praxis-Websites (Jameda, Doctolib-Style) JS rendern.
-
-Statuszeile zeigt anschließend: „120 Orte · 87 mit Website · 41 mit E-Mail extrahiert".
-
-## 4. UI-Änderungen `MarketingPanel.tsx`
-
-- Zweiter Button „OpenStreetMap suchen" (Outline-Style, gleicher Purple-Rahmen).
-- `lastRun` bekommt Feld `quelle: 'gmaps' | 'osm'`; Statuszeile zeigt die Quelle.
-- Marketingliste filtert weiterhin nach `quelle_typ IN ('google_maps','openstreetmap')` + gültige E-Mail.
-- Kein neues Layout, nur ein Button + Debug-Zahlen mehr.
-
-## 5. Nicht enthalten
-
-- Keine Änderung an BRAK-Recherche.
-- Kein neuer eigener Impressum-Crawler (nur bestehende Firecrawl-Basis erweitert).
-- Keine Änderung an Auth/Rollen/Templates.
+## Nicht enthalten
+- Keine Änderung an Auth, DB-Schema, Templates, Gmail/Outlook-Sync.
+- Kein neuer Cron – bleibt ein manuell gestarteter Einmal-Lauf.
 
 ## Technische Details
 
-- Neue Datei-Änderungen: `src/lib/sources.functions.ts` (Overpass-Query + Fallback-Erweiterung), `src/components/MarketingPanel.tsx` (zweiter Button, Quellen-Anzeige).
-- DB: keine Migration nötig, `quelle_typ` ist bereits `text`.
-- Overpass-Endpoint: `https://overpass-api.de/api/interpreter`; als Fallback `https://overpass.kumi.systems/api/interpreter`. Timeout 25 s, Retry 1×.
-- Rate: Overpass duldet ~2 req/s; OSM-Button ist ein einziger Request pro Suche.
-- Cloudflare-Email-Decode: `data-cfemail="..."` → XOR mit erstem Byte.
+- Neue Datei-Änderungen: `src/components/MarketingPanel.tsx` (Testlauf-Button, Schleifen-Logik, Progress-UI), evtl. `src/lib/sources.functions.ts` (Hilfsfunktion `countMarketingLeads(mode)` falls nicht vorhanden).
+- Schleife läuft rein clientseitig über die bestehenden Server-Fns – keine neue Backend-Logik nötig.
+- Zwischen den Requests ~500 ms Pause, damit Overpass/Google-Gateway nicht ratelimiten.
+- Zählung über `listLeads({ mode: 'dsb' })` gefiltert auf `quelle_typ IN ('google_maps','openstreetmap')` + gültige E-Mail (gleiche Logik wie aktuelle Marketingliste).
+- Runtime-Fehler `resolveDispatcher().use` zuerst per `read_runtime_errors` genau lokalisieren und fixen, bevor der Testlauf startet.
