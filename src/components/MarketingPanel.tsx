@@ -15,6 +15,7 @@ import {
 } from "@/lib/marketing.functions";
 import {
   scrapeGoogleMapsHealthcare,
+  scrapeOsmHealthcare,
   DSB_ZIELGRUPPEN,
   type DsbZielgruppe,
 } from "@/lib/sources.functions";
@@ -59,6 +60,7 @@ export function MarketingPanel() {
   const patchLead = useServerFn(updateLead);
   const dropLead = useServerFn(deleteLead);
   const runGmaps = useServerFn(scrapeGoogleMapsHealthcare);
+  const runOsm = useServerFn(scrapeOsmHealthcare);
 
   // Suchformular
   const [zielgruppe, setZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
@@ -92,7 +94,7 @@ export function MarketingPanel() {
         setLeads(
           r.leads.filter(
             (l) =>
-              l.quelle_typ === "google_maps" &&
+              (l.quelle_typ === "google_maps" || l.quelle_typ === "openstreetmap") &&
               /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email),
           ),
         );
@@ -116,7 +118,7 @@ export function MarketingPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (source: "gmaps" | "osm") => {
     if (!/^\d{4,5}$/.test(plz.trim())) {
       toast.error("Bitte eine gültige PLZ eingeben (4–5 Ziffern)");
       return;
@@ -125,7 +127,8 @@ export function MarketingPanel() {
     setResults([]);
     setLastRun(null);
     try {
-      const r = await runGmaps({
+      const runner = source === "gmaps" ? runGmaps : runOsm;
+      const r = await runner({
         data: { zielgruppe, plz: plz.trim(), radiusKm: radius, limit },
       });
       if (!r.ok) {
@@ -138,11 +141,12 @@ export function MarketingPanel() {
         found: r.found,
         inserted: r.inserted,
         skipped: r.skipped,
-        cellsTotal: r.cellsTotal,
-        cellsUsed: r.cellsUsed,
+        cellsTotal: "cellsTotal" in r ? r.cellsTotal : undefined,
+        cellsUsed: "cellsUsed" in r ? r.cellsUsed : undefined,
       });
+      const label = source === "gmaps" ? "Google Maps" : "OpenStreetMap";
       toast.success(
-        `${r.places} Orte gefunden · ${r.found} mit E-Mail · ${r.inserted} neu in Marketingliste`,
+        `${label}: ${r.places} Orte · ${r.found} mit E-Mail · ${r.inserted} neu`,
       );
       await reloadLeads();
     } catch (e) {
@@ -223,19 +227,34 @@ export function MarketingPanel() {
                 onChange={(e) => setLimit(Math.max(20, Math.min(300, Number(e.target.value) || 150)))}
               />
             </div>
-            <Button
-              onClick={handleSearch}
-              disabled={loading}
-              className="h-9"
-              style={{ backgroundColor: CRM_PURPLE }}
-            >
-              {loading ? (
-                <Loader2 className="size-4 animate-spin mr-2" />
-              ) : (
-                <Search className="size-4 mr-2" />
-              )}
-              Suchen &amp; importieren
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleSearch("gmaps")}
+                disabled={loading}
+                className="h-9 flex-1"
+                style={{ backgroundColor: CRM_PURPLE }}
+              >
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <Search className="size-4 mr-2" />
+                )}
+                Google Maps
+              </Button>
+              <Button
+                onClick={() => handleSearch("osm")}
+                disabled={loading}
+                variant="outline"
+                className="h-9 flex-1"
+              >
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <MapPin className="size-4 mr-2" />
+                )}
+                OpenStreetMap
+              </Button>
+            </div>
           </div>
 
           {/* Statuszeile */}

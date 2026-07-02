@@ -1,57 +1,78 @@
+
 ## Ziel
 
-Die Marketingliste zeigt **ausschließlich** durch die Google-Maps-Recherche importierte Leads mit E-Mail. Die Suche liefert deutlich mehr Treffer (>60) durch automatische Grid-Aufteilung. Alles auf einem Screen: Suchleiste oben, Ergebnistabelle darunter.
+Zwei Probleme lösen:
 
-## 1. Marketingliste bereinigen
+1. **„Keine E-Mails gefunden"** – Google Maps liefert für viele Praxen entweder keine Website oder Firecrawl findet auf `/impressum` nichts, weil viele Seiten JS-rendern, PDF-Impressen nutzen oder E-Mails als Bild einbetten.
+2. **OpenStreetMap wird noch nicht genutzt** – OSM (Overpass API) enthält für Ärzte/Kliniken/Apotheken oft direkt `contact:email`, `email`, `contact:website` und `phone` als Tags. Kein Scraping, kostenlos, keine API-Key nötig.
 
-- Neues Feld `leads.source = 'gmaps'` (Migration, Default `'manual'`).
-- `MarketingPanel` listet nur Leads mit `source='gmaps'` **und** vorhandener E-Mail.
-- Google-Maps-Import setzt `source='gmaps'` automatisch.
-- Bestehende manuelle/CSV-Leads bleiben in Tab „Lokal" sichtbar, verschwinden aber aus der Marketingliste.
-- Kein Auto-Push mehr aus `addLeads()` in die Cloud-Marketingliste – nur der Maps-Import schreibt dorthin.
+## 1. Neuer OSM-Button in der Command-Bar
 
-## 2. Suche verbessern (>60 Treffer via Grid)
+Neben „Suchen & importieren" (Google Maps) kommt ein zweiter Button:
 
-`searchPlaces` in `src/lib/sources.functions.ts` wird zu einer **Grid-Suche**:
-
-- PLZ → Zentrum (Geocoding, bereits vorhanden).
-- Wenn Radius > 5 km: Zentrum wird in ein Hex-Grid aus Teilzellen à ~4 km zerlegt (Standard-Radius/4).
-- Für jede Zelle: `places:searchNearby` (statt Textsearch) mit dem passenden Google-Typ (`doctor`, `hospital`, `dentist`, `pharmacy` …) + Pagination (3 Seiten × 20).
-- Deduplizierung über `place.id`.
-- Harte Obergrenze konfigurierbar (Default 300 Orte), damit Kosten kalkulierbar bleiben.
-- Fortschritt wird als Zahl (`X / Y Zellen`) im Response-Feld `progress` mitgeliefert und in der UI angezeigt.
-
-E-Mail-Scraping bleibt (parallel, 5 Worker), nur Orte **mit** E-Mail landen als Leads in der Marketingliste; alle Treffer erscheinen weiterhin in der Ergebnistabelle unterhalb der Suche zur Kontrolle.
-
-## 3. UI: Ein-Screen-Layout (Power Apps Stil)
-
-`MarketingPanel` wird umgebaut:
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│ Command-Bar:  [PLZ] [Radius km] [Zielgruppe ▾] [Suchen] │
-│               Fortschritt: 42/64 Zellen · 187 Treffer   │
-├──────────────────────────────────────────────────────────┤
-│ Ergebnistabelle (scrollbar, sticky header)              │
-│ Name │ Stadt │ Adresse │ Telefon │ E-Mail │ Website │ ⋯ │
-└──────────────────────────────────────────────────────────┘
+```
+[ Google Maps suchen ]   [ OpenStreetMap suchen ]
 ```
 
-- Kein Akkordeon, keine zweite Karte – alles sofort sichtbar.
-- Filter-Chips über der Tabelle: „Nur mit E-Mail" (Default an), „Nur neu importiert".
-- Sofort-Aktionen pro Zeile: `mailto:`, `tel:`, Website öffnen, „In Marketingliste behalten / entfernen".
-- Fluent-UI-Farben (Lila `#742774`) bleiben.
+- Gleiche Eingaben: Zielgruppe, PLZ, Radius, Max. Treffer.
+- OSM-Button ruft neue Server-Fn `scrapeOsmHealthcare` auf.
+- Ergebnisse landen in derselben Tabelle „Aktuelle Treffer" und – falls E-Mail vorhanden – in der Marketingliste (`quelle_typ='openstreetmap'`).
+- Statuszeile zeigt Herkunft: „OSM · 87 Orte · 41 mit E-Mail".
 
-## 4. Nicht enthalten
+## 2. Neue Server-Funktion `scrapeOsmHealthcare`
 
-- Keine Änderung an Vorlagen, Outlook/Gmail-Sync, Ausschreibungen.
-- Keine neuen Zielgruppen-Presets in diesem Schritt (nur die bereits vorhandenen).
-- Keine Team-/Rollen-Funktionen.
+Ablauf:
+
+1. PLZ → Zentrum (bereits vorhandener `geocodePlz` via Google-Geocoding-Gateway; alternativ Nominatim, wenn kein Google-Key).
+2. Overpass-API-Query (`https://overpass-api.de/api/interpreter`) mit Radius um Zentrum. Mapping Zielgruppe → OSM-Tag:
+   - Arztpraxen & MVZ → `amenity=doctors` / `healthcare=doctor`
+   - Kliniken & Reha → `amenity=hospital` / `healthcare=hospital`
+   - Zahnärzte → `amenity=dentist` / `healthcare=dentist`
+   - Physiotherapie → `healthcare=physiotherapist`
+   - Heilpraktiker → `healthcare=alternative`
+   - Apotheken → `amenity=pharmacy`
+   - Pflegedienste → `amenity=nursing_home` / `healthcare=nursing`
+   - Labore → `healthcare=laboratory`
+3. Aus dem Response direkt lesen:
+   - `name` = `tags.name`
+   - `email` = `tags["contact:email"] || tags.email`
+   - `phone` = `tags["contact:phone"] || tags.phone`
+   - `website` = `tags["contact:website"] || tags.website`
+   - `stadt` = `tags["addr:city"]`, `adresse` = `addr:street + addr:housenumber + addr:postcode`
+4. Für Treffer **ohne** E-Mail aber **mit** Website: gleiches Firecrawl-Fallback wie bei Google Maps.
+5. Dedupe über E-Mail, Insert in `leads` mit `quelle_typ='openstreetmap'`.
+
+Keine externen API-Keys – Overpass ist offen; einmalige User-Agent-Header + kleine Wartepause zwischen Retries.
+
+## 3. E-Mail-Extraktion verbessern (gilt für beide Quellen)
+
+Die bestehende `scrapeEmailFromWebsite` in `src/lib/sources.functions.ts` wird erweitert:
+
+- **Mehr Pfade** probieren: zusätzlich `/impressum/`, `/legal`, `/rechtliches`, `/imprint`, `/kontakt/`, `/ueber-uns`, `/team`, `/praxis`.
+- **Google-Suche als Fallback**: wenn direktes Scraping 0 E-Mails liefert, ein Firecrawl-`search` mit `site:<domain> "@<domain>"` OR `"@t-online.de"` OR generisch `"mail" site:<domain>` – oft finden sich E-Mails in Cache/Snippets.
+- **Bild-Mail-Heuristik**: wenn `<img alt="email">` oder `mailto:` mit JS-Encoding, Regex auf `data-cfemail` (Cloudflare) → decodieren.
+- **Trefferzahl-Debug**: pro Lauf mitliefern, wie viele Orte Website hatten, wie viele davon E-Mail lieferten, damit der User sieht warum die Quote niedrig ist.
+- **Firecrawl `waitFor`** = 3000 ms auf `/impressum`, damit React-Praxis-Websites (Jameda, Doctolib-Style) JS rendern.
+
+Statuszeile zeigt anschließend: „120 Orte · 87 mit Website · 41 mit E-Mail extrahiert".
+
+## 4. UI-Änderungen `MarketingPanel.tsx`
+
+- Zweiter Button „OpenStreetMap suchen" (Outline-Style, gleicher Purple-Rahmen).
+- `lastRun` bekommt Feld `quelle: 'gmaps' | 'osm'`; Statuszeile zeigt die Quelle.
+- Marketingliste filtert weiterhin nach `quelle_typ IN ('google_maps','openstreetmap')` + gültige E-Mail.
+- Kein neues Layout, nur ein Button + Debug-Zahlen mehr.
+
+## 5. Nicht enthalten
+
+- Keine Änderung an BRAK-Recherche.
+- Kein neuer eigener Impressum-Crawler (nur bestehende Firecrawl-Basis erweitert).
+- Keine Änderung an Auth/Rollen/Templates.
 
 ## Technische Details
 
-- Migration: `ALTER TABLE leads ADD COLUMN source text NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','csv','gmaps'))` + Index `(user_id, mode, source)`.
-- `upsertLeads` akzeptiert `source`; `runGmapsSearch` setzt `source='gmaps'`.
-- Grid-Berechnung: einfache Lat/Lng-Offsets (ohne externe Geo-Lib), ~111 km/° Lat, `cos(lat)` für Lng.
-- Rate-Limit: max. 8 parallele Places-Requests, kleine Pausen zwischen Seiten (Google verlangt kurz Wartezeit für `nextPageToken`).
-- Frontend hält den Fortschritt via Polling **nicht** – einfacher: Server-Fn streamt nicht, sondern gibt am Ende alles zurück; ein Client-seitiger Spinner + Zellen-Zähler wird aus der Response-Statistik gefüllt.
+- Neue Datei-Änderungen: `src/lib/sources.functions.ts` (Overpass-Query + Fallback-Erweiterung), `src/components/MarketingPanel.tsx` (zweiter Button, Quellen-Anzeige).
+- DB: keine Migration nötig, `quelle_typ` ist bereits `text`.
+- Overpass-Endpoint: `https://overpass-api.de/api/interpreter`; als Fallback `https://overpass.kumi.systems/api/interpreter`. Timeout 25 s, Retry 1×.
+- Rate: Overpass duldet ~2 req/s; OSM-Button ist ein einziger Request pro Suche.
+- Cloudflare-Email-Decode: `data-cfemail="..."` → XOR mit erstem Byte.

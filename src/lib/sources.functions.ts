@@ -794,6 +794,24 @@ function deobfuscateEmails(text: string): string {
     .replace(/\s*&#64;\s*/gi, "@");
 }
 
+/** Cloudflare `data-cfemail`-Attribute decodieren. */
+function decodeCloudflareEmails(html: string): string[] {
+  const out: string[] = [];
+  const re = /data-cfemail=["']([a-f0-9]+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const hex = m[1];
+    if (hex.length < 4) continue;
+    const key = parseInt(hex.slice(0, 2), 16);
+    let email = "";
+    for (let i = 2; i < hex.length; i += 2) {
+      email += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+    }
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) out.push(email.toLowerCase());
+  }
+  return out;
+}
+
 async function scrapeEmailFromWebsite(
   website: string,
   firecrawlKey: string,
@@ -807,12 +825,20 @@ async function scrapeEmailFromWebsite(
   })();
   if (!origin) return { email: null, reason: "no_url" };
   const urls = [
-    origin,
     `${origin}/impressum`,
+    `${origin}/impressum/`,
     `${origin}/impressum.html`,
     `${origin}/kontakt`,
+    `${origin}/kontakt/`,
     `${origin}/kontakt.html`,
+    `${origin}/imprint`,
+    `${origin}/legal`,
+    `${origin}/rechtliches`,
     `${origin}/datenschutz`,
+    `${origin}/ueber-uns`,
+    `${origin}/team`,
+    `${origin}/praxis`,
+    origin,
   ];
   let anyScraped = false;
   for (const url of urls) {
@@ -827,7 +853,8 @@ async function scrapeEmailFromWebsite(
           url,
           formats: ["markdown", "html"],
           onlyMainContent: false,
-          timeout: 15000,
+          waitFor: 2500,
+          timeout: 20000,
         }),
       });
       if (!res.ok) continue;
@@ -840,14 +867,21 @@ async function scrapeEmailFromWebsite(
       if (!md && !html) continue;
       anyScraped = true;
 
-      // 1. Direkt aus mailto: (verlässlichste Quelle)
+      // 1. Cloudflare-obfuscated emails
+      const cf = decodeCloudflareEmails(html);
+      if (cf.length > 0) {
+        const good = cf.find((e) => !BLOCK_EMAIL_DOMAINS.has(e.split("@")[1] ?? ""));
+        if (good) return { email: good, reason: "ok" };
+      }
+
+      // 2. Direkt aus mailto: (verlässlichste Quelle)
       const mailto = html.match(/mailto:([^"'?\s<>]+)/i);
       if (mailto) {
         const e = extractEmail(mailto[1]);
         if (e) return { email: e, reason: "ok" };
       }
 
-      // 2. Aus deobfuscated Markdown + HTML
+      // 3. Aus deobfuscated Markdown + HTML
       const combined = deobfuscateEmails(`${md}\n${html}`);
       const email = extractEmail(combined);
       if (email) return { email, reason: "ok" };
@@ -1089,3 +1123,308 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
     },
   );
 
+
+// ---- OpenStreetMap / Overpass DSB-Recherche -----------------------
+
+interface OsmElement {
+  type: string;
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string>;
+}
+
+const OSM_QUERY_TAGS: Record<DsbZielgruppe, string[]> = {
+  "Arztpraxen & MVZ": ['amenity=doctors', 'healthcare=doctor', 'healthcare=centre'],
+  "Kliniken & Reha": ['amenity=hospital', 'healthcare=hospital', 'healthcare=rehabilitation'],
+  "Zahnärzte": ['amenity=dentist', 'healthcare=dentist'],
+  "Physiotherapie": ['healthcare=physiotherapist'],
+  "Heilpraktiker": ['healthcare=alternative'],
+  "Apotheken": ['amenity=pharmacy', 'healthcare=pharmacy'],
+  "Pflegedienste": ['amenity=nursing_home', 'healthcare=nursing', 'social_facility=nursing_home'],
+  "Labore": ['healthcare=laboratory'],
+};
+
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
+
+async function queryOverpass(
+  center: { lat: number; lng: number },
+  radiusMeters: number,
+  tagFilters: string[],
+): Promise<OsmElement[]> {
+  const parts = tagFilters
+    .map((t) => {
+      const [k, v] = t.split("=");
+      const filter = `["${k}"="${v}"]`;
+      return `nwr${filter}(around:${radiusMeters},${center.lat},${center.lng});`;
+    })
+    .join("");
+  const query = `[out:json][timeout:25];(${parts});out center tags 300;`;
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "ArztFinderPro/1.0 (contact via app)",
+        },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+      if (!res.ok) continue;
+      const json = (await res.json()) as { elements?: OsmElement[] };
+      return json.elements ?? [];
+    } catch {
+      /* try next */
+    }
+  }
+  return [];
+}
+
+export const scrapeOsmHealthcare = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => ScrapeGmapsInput.parse(d))
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      found: number;
+      inserted: number;
+      skipped: number;
+      places: number;
+      withWebsite?: number;
+      preview: Array<{
+        email: string | null;
+        name: string | null;
+        website: string | null;
+        adresse: string | null;
+        telefon: string | null;
+        stadt: string | null;
+      }>;
+    }> => {
+      const logSearch = async (result: {
+        ok: boolean;
+        error?: string;
+        found: number;
+        inserted: number;
+        skipped: number;
+      }) => {
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.from("source_searches").insert({
+            quelle: "openstreetmap",
+            fachgebiet: data.zielgruppe,
+            ort: data.plz,
+            land: "DE",
+            mode: "dsb",
+            params: { radiusKm: data.radiusKm, limit: data.limit },
+            found: result.found,
+            inserted: result.inserted,
+            skipped: result.skipped,
+            ok: result.ok,
+            error: result.error ?? null,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+        } catch {
+          /* ignore */
+        }
+      };
+
+      const lovableKey = process.env.LOVABLE_API_KEY;
+      const gmapsKey = process.env.GOOGLE_MAPS_API_KEY;
+      const firecrawlKey = process.env.FIRECRAWL_API_KEY;
+
+      // Geocoding via Google (falls verfügbar), sonst Nominatim
+      let geo: { lat: number; lng: number; stadt: string | null } | null = null;
+      if (lovableKey && gmapsKey) {
+        geo = await geocodePlz(data.plz, gmapsKey, lovableKey);
+      }
+      if (!geo) {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&postalcode=${encodeURIComponent(data.plz)}`,
+            { headers: { "User-Agent": "ArztFinderPro/1.0" } },
+          );
+          if (res.ok) {
+            const json = (await res.json()) as Array<{ lat: string; lon: string; display_name?: string }>;
+            const first = json[0];
+            if (first) {
+              geo = {
+                lat: parseFloat(first.lat),
+                lng: parseFloat(first.lon),
+                stadt: first.display_name?.split(",")[1]?.trim() ?? null,
+              };
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!geo) {
+        const r = {
+          ok: false,
+          error: `PLZ ${data.plz} konnte nicht geocodiert werden.`,
+          found: 0,
+          inserted: 0,
+          skipped: 0,
+          places: 0,
+          preview: [],
+        };
+        await logSearch(r);
+        return r;
+      }
+
+      const tagFilters = OSM_QUERY_TAGS[data.zielgruppe];
+      const radiusMeters = Math.min(data.radiusKm * 1000, 50000);
+      const elements = await queryOverpass(geo, radiusMeters, tagFilters);
+
+      // Deduplicate by OSM id
+      const byId = new Map<number, OsmElement>();
+      for (const el of elements) {
+        if (!byId.has(el.id)) byId.set(el.id, el);
+      }
+      const all = Array.from(byId.values()).slice(0, data.limit);
+
+      type Item = {
+        name: string | null;
+        email: string | null;
+        telefon: string | null;
+        website: string | null;
+        adresse: string | null;
+        stadt: string | null;
+      };
+
+      const items: Item[] = all.map((el) => {
+        const t = el.tags ?? {};
+        const email = (t["contact:email"] ?? t.email ?? "").toLowerCase().trim() || null;
+        const website = (t["contact:website"] ?? t.website ?? "").trim() || null;
+        const phone = (t["contact:phone"] ?? t.phone ?? "").trim() || null;
+        const stadt = t["addr:city"] ?? geo!.stadt;
+        const strasse = [t["addr:street"], t["addr:housenumber"]].filter(Boolean).join(" ");
+        const plz = t["addr:postcode"];
+        const adresse = [strasse, [plz, stadt].filter(Boolean).join(" ")].filter(Boolean).join(", ") || null;
+        return {
+          name: t.name ?? null,
+          email,
+          telefon: phone,
+          website,
+          adresse,
+          stadt,
+        };
+      });
+
+      // Für Treffer ohne E-Mail aber mit Website: Firecrawl-Fallback (max. 20 parallel-limitiert)
+      const withoutEmail = items.filter((i) => !i.email && i.website);
+      if (firecrawlKey && withoutEmail.length > 0) {
+        const CONCURRENCY = 5;
+        const MAX_SCRAPE = 30;
+        const target = withoutEmail.slice(0, MAX_SCRAPE);
+        let idx = 0;
+        const doOne = async (): Promise<void> => {
+          while (true) {
+            const i = idx++;
+            if (i >= target.length) return;
+            const it = target[i];
+            if (!it.website) continue;
+            try {
+              const r = await scrapeEmailFromWebsite(it.website, firecrawlKey);
+              if (r.email) it.email = r.email;
+            } catch {
+              /* ignore */
+            }
+          }
+        };
+        const workers: Promise<void>[] = [];
+        for (let w = 0; w < Math.min(CONCURRENCY, target.length); w++) workers.push(doOne());
+        await Promise.all(workers);
+      }
+
+      // Sort: mit E-Mail zuerst
+      items.sort((a, b) => {
+        const ae = a.email ? 0 : 1;
+        const be = b.email ? 0 : 1;
+        if (ae !== be) return ae - be;
+        return (a.name ?? "").localeCompare(b.name ?? "");
+      });
+
+      // Insert alle mit gültiger E-Mail
+      const seen = new Set<string>();
+      const rowsToInsert = items
+        .filter((it) => {
+          if (!it.email) return false;
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(it.email)) return false;
+          if (seen.has(it.email)) return false;
+          seen.add(it.email);
+          return true;
+        })
+        .map((it) => {
+          const websiteOrigin = (() => {
+            try {
+              return it.website ? new URL(it.website).origin : null;
+            } catch {
+              return it.website;
+            }
+          })();
+          return {
+            land: "DE" as const,
+            email: it.email!.toLowerCase(),
+            fachgebiet: data.zielgruppe,
+            zielgruppe: "gesundheitswesen",
+            name: it.name,
+            telefon: it.telefon,
+            website: websiteOrigin,
+            stadt: it.stadt,
+            quelle_url: it.website?.slice(0, 800) ?? null,
+            quelle_typ: "openstreetmap",
+            gerichtsgutachter: false,
+            mode: "dsb" as const,
+          };
+        });
+
+      let insertedCount = 0;
+      if (rowsToInsert.length > 0) {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { scoreLead } = await import("@/lib/scoring");
+        const enrichedRows = rowsToInsert.map((base) => {
+          const s = scoreLead(base);
+          return { ...base, status: "neu" as const, qualitaet_score: s.score, qualitaets_merkmale: s.merkmale };
+        });
+        const { data: inserted, error } = await supabaseAdmin
+          .from("leads")
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .upsert(enrichedRows as any, { onConflict: "land,email", ignoreDuplicates: true })
+          .select("id");
+        if (error) {
+          const r = {
+            ok: false,
+            error: error.message,
+            found: rowsToInsert.length,
+            inserted: 0,
+            skipped: 0,
+            places: all.length,
+            withWebsite: items.filter((i) => i.website).length,
+            preview: items,
+          };
+          await logSearch(r);
+          return r;
+        }
+        insertedCount = inserted?.length ?? 0;
+      }
+
+      const result = {
+        ok: true,
+        found: rowsToInsert.length,
+        inserted: insertedCount,
+        skipped: rowsToInsert.length - insertedCount,
+        places: all.length,
+        withWebsite: items.filter((i) => i.website).length,
+        preview: items,
+      };
+      await logSearch(result);
+      return result;
+    },
+  );
