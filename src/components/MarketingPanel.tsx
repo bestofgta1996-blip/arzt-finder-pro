@@ -60,6 +60,7 @@ export function MarketingPanel() {
   const patchLead = useServerFn(updateLead);
   const dropLead = useServerFn(deleteLead);
   const runGmaps = useServerFn(scrapeGoogleMapsHealthcare);
+  const runOsm = useServerFn(scrapeOsmHealthcare);
 
   // Suchformular
   const [zielgruppe, setZielgruppe] = useState<DsbZielgruppe>("Arztpraxen & MVZ");
