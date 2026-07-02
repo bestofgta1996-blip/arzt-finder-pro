@@ -168,6 +168,112 @@ export function MarketingPanel() {
     }
   };
 
+  const runTestlauf = async () => {
+    if (!/^\d{4,5}$/.test(plz.trim())) {
+      toast.error("Bitte eine gültige PLZ eingeben (4–5 Ziffern)");
+      return;
+    }
+    setTestRunning(true);
+    setTestCancel(false);
+    const target = 100;
+    const startTs = Date.now();
+    const order: DsbZielgruppe[] = [
+      zielgruppe,
+      ...DSB_ZIELGRUPPEN.filter((z) => z !== zielgruppe),
+    ];
+    let currentRadius = radius;
+    let iteration = 1;
+    let totalGroupsRun = 0;
+    let sourcesUsed = new Set<string>();
+
+    const countLeads = async () => {
+      const r = await fetchLeads({ data: { mode } });
+      if (!r.ok) return 0;
+      return r.leads.filter(
+        (l) =>
+          (l.quelle_typ === "google_maps" || l.quelle_typ === "openstreetmap") &&
+          /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email),
+      ).length;
+    };
+
+    let current = await countLeads();
+    setTestProgress({ current, target, zielgruppe: order[0], radius: currentRadius, iteration, source: "-" });
+
+    try {
+      outer: while (current < target) {
+        let progressedThisRound = false;
+        for (const zg of order) {
+          if (testCancel) break outer;
+          for (const src of ["osm", "gmaps"] as const) {
+            if (testCancel) break outer;
+            setTestProgress({
+              current,
+              target,
+              zielgruppe: zg,
+              radius: currentRadius,
+              iteration,
+              source: src === "gmaps" ? "Google Maps" : "OpenStreetMap",
+            });
+            try {
+              const runner = src === "gmaps" ? runGmaps : runOsm;
+              const r = await runner({
+                data: { zielgruppe: zg, plz: plz.trim(), radiusKm: currentRadius, limit },
+              });
+              if (r.ok) {
+                sourcesUsed.add(src);
+                if (r.inserted > 0) progressedThisRound = true;
+                setResults(r.preview);
+                setLastRun({
+                  places: r.places,
+                  found: r.found,
+                  inserted: r.inserted,
+                  skipped: r.skipped,
+                  cellsTotal: "cellsTotal" in r ? r.cellsTotal : undefined,
+                  cellsUsed: "cellsUsed" in r ? r.cellsUsed : undefined,
+                });
+              }
+            } catch (e) {
+              console.warn("Testlauf-Fehler", zg, src, e);
+            }
+            await new Promise((res) => setTimeout(res, 500));
+            current = await countLeads();
+            totalGroupsRun++;
+            setTestProgress({
+              current,
+              target,
+              zielgruppe: zg,
+              radius: currentRadius,
+              iteration,
+              source: src === "gmaps" ? "Google Maps" : "OpenStreetMap",
+            });
+            if (current >= target) break outer;
+          }
+        }
+        if (!progressedThisRound) {
+          if (currentRadius >= 50) {
+            toast.warning(
+              `Testlauf gestoppt: max. Radius erreicht, ${current}/${target} Leads.`,
+            );
+            break;
+          }
+          currentRadius = Math.min(50, currentRadius + 10);
+          iteration++;
+        } else {
+          iteration++;
+        }
+      }
+      const min = Math.round((Date.now() - startTs) / 60000);
+      toast.success(
+        `Testlauf beendet: ${current} Leads · ${totalGroupsRun} Läufe · ${sourcesUsed.size} Quellen · ${min} min`,
+      );
+      await reloadLeads();
+    } finally {
+      setTestRunning(false);
+      setTestProgress(null);
+      setTestCancel(false);
+    }
+  };
+
   const displayedResults = useMemo(
     () => (onlyWithEmail ? results.filter((r) => !!r.email) : results),
     [results, onlyWithEmail],
