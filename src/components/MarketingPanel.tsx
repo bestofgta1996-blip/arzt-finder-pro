@@ -377,7 +377,7 @@ export function MarketingPanel() {
               {mode === "dsb" && (
                 testRunning ? (
                   <Button
-                    onClick={() => setTestCancel(true)}
+                    onClick={() => { cancelRef.current = true; setTestCancel(true); }}
                     variant="destructive"
                     className="h-9 flex-1"
                   >
