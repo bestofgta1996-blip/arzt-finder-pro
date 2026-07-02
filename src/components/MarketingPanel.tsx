@@ -227,19 +227,34 @@ export function MarketingPanel() {
                 onChange={(e) => setLimit(Math.max(20, Math.min(300, Number(e.target.value) || 150)))}
               />
             </div>
-            <Button
-              onClick={handleSearch}
-              disabled={loading}
-              className="h-9"
-              style={{ backgroundColor: CRM_PURPLE }}
-            >
-              {loading ? (
-                <Loader2 className="size-4 animate-spin mr-2" />
-              ) : (
-                <Search className="size-4 mr-2" />
-              )}
-              Suchen &amp; importieren
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleSearch("gmaps")}
+                disabled={loading}
+                className="h-9 flex-1"
+                style={{ backgroundColor: CRM_PURPLE }}
+              >
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <Search className="size-4 mr-2" />
+                )}
+                Google Maps
+              </Button>
+              <Button
+                onClick={() => handleSearch("osm")}
+                disabled={loading}
+                variant="outline"
+                className="h-9 flex-1"
+              >
+                {loading ? (
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                ) : (
+                  <MapPin className="size-4 mr-2" />
+                )}
+                OpenStreetMap
+              </Button>
+            </div>
           </div>
 
           {/* Statuszeile */}
