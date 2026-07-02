@@ -70,6 +70,18 @@ export function MarketingPanel() {
   const [loading, setLoading] = useState(false);
   const [onlyWithEmail, setOnlyWithEmail] = useState(true);
 
+  // Testlauf-Status
+  const [testRunning, setTestRunning] = useState(false);
+  const [testCancel, setTestCancel] = useState(false);
+  const [testProgress, setTestProgress] = useState<{
+    current: number;
+    target: number;
+    zielgruppe: string;
+    radius: number;
+    iteration: number;
+    source: string;
+  } | null>(null);
+
   // Suchergebnisse (aktueller Lauf)
   const [results, setResults] = useState<PreviewRow[]>([]);
   const [lastRun, setLastRun] = useState<{
