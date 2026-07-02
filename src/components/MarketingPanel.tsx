@@ -94,7 +94,7 @@ export function MarketingPanel() {
         setLeads(
           r.leads.filter(
             (l) =>
-              l.quelle_typ === "google_maps" &&
+              (l.quelle_typ === "google_maps" || l.quelle_typ === "openstreetmap") &&
               /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email),
           ),
         );
