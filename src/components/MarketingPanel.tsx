@@ -372,8 +372,47 @@ export function MarketingPanel() {
                 )}
                 OpenStreetMap
               </Button>
+              {mode === "dsb" && (
+                testRunning ? (
+                  <Button
+                    onClick={() => setTestCancel(true)}
+                    variant="destructive"
+                    className="h-9 flex-1"
+                  >
+                    <Loader2 className="size-4 animate-spin mr-2" />
+                    Stop
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => void runTestlauf()}
+                    disabled={loading}
+                    variant="secondary"
+                    className="h-9 flex-1"
+                  >
+                    Testlauf bis 100
+                  </Button>
+                )
+              )}
             </div>
           </div>
+
+          {testProgress && (
+            <div className="mt-3 rounded border bg-purple-50 px-3 py-2 text-xs text-purple-900">
+              <div className="flex items-center gap-2 font-medium">
+                <Loader2 className="size-3 animate-spin" />
+                Testlauf: {testProgress.current} / {testProgress.target} Leads
+                <span className="text-purple-700">
+                  · {testProgress.source} · {testProgress.zielgruppe} · Radius {testProgress.radius} km · Runde {testProgress.iteration}
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full rounded bg-purple-200 overflow-hidden">
+                <div
+                  className="h-full bg-purple-600 transition-all"
+                  style={{ width: `${Math.min(100, (testProgress.current / testProgress.target) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Statuszeile */}
           <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
