@@ -118,7 +118,7 @@ export function MarketingPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (source: "gmaps" | "osm") => {
     if (!/^\d{4,5}$/.test(plz.trim())) {
       toast.error("Bitte eine gültige PLZ eingeben (4–5 Ziffern)");
       return;
@@ -127,7 +127,8 @@ export function MarketingPanel() {
     setResults([]);
     setLastRun(null);
     try {
-      const r = await runGmaps({
+      const runner = source === "gmaps" ? runGmaps : runOsm;
+      const r = await runner({
         data: { zielgruppe, plz: plz.trim(), radiusKm: radius, limit },
       });
       if (!r.ok) {
@@ -140,11 +141,12 @@ export function MarketingPanel() {
         found: r.found,
         inserted: r.inserted,
         skipped: r.skipped,
-        cellsTotal: r.cellsTotal,
-        cellsUsed: r.cellsUsed,
+        cellsTotal: "cellsTotal" in r ? r.cellsTotal : undefined,
+        cellsUsed: "cellsUsed" in r ? r.cellsUsed : undefined,
       });
+      const label = source === "gmaps" ? "Google Maps" : "OpenStreetMap";
       toast.success(
-        `${r.places} Orte gefunden · ${r.found} mit E-Mail · ${r.inserted} neu in Marketingliste`,
+        `${label}: ${r.places} Orte · ${r.found} mit E-Mail · ${r.inserted} neu`,
       );
       await reloadLeads();
     } catch (e) {
