@@ -73,6 +73,7 @@ export function MarketingPanel() {
   // Testlauf-Status
   const [testRunning, setTestRunning] = useState(false);
   const [testCancel, setTestCancel] = useState(false);
+  const cancelRef = useRef(false);
   const [testProgress, setTestProgress] = useState<{
     current: number;
     target: number;
