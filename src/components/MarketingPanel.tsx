@@ -176,6 +176,7 @@ export function MarketingPanel() {
     }
     setTestRunning(true);
     setTestCancel(false);
+    cancelRef.current = false;
     const target = 100;
     const startTs = Date.now();
     const order: DsbZielgruppe[] = [
