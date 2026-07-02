@@ -204,9 +204,9 @@ export function MarketingPanel() {
       outer: while (current < target) {
         let progressedThisRound = false;
         for (const zg of order) {
-          if (testCancel) break outer;
+          if (cancelRef.current) break outer;
           for (const src of ["osm", "gmaps"] as const) {
-            if (testCancel) break outer;
+            if (cancelRef.current) break outer;
             setTestProgress({
               current,
               target,
