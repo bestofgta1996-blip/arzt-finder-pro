@@ -794,6 +794,24 @@ function deobfuscateEmails(text: string): string {
     .replace(/\s*&#64;\s*/gi, "@");
 }
 
+/** Cloudflare `data-cfemail`-Attribute decodieren. */
+function decodeCloudflareEmails(html: string): string[] {
+  const out: string[] = [];
+  const re = /data-cfemail=["']([a-f0-9]+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const hex = m[1];
+    if (hex.length < 4) continue;
+    const key = parseInt(hex.slice(0, 2), 16);
+    let email = "";
+    for (let i = 2; i < hex.length; i += 2) {
+      email += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+    }
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) out.push(email.toLowerCase());
+  }
+  return out;
+}
+
 async function scrapeEmailFromWebsite(
   website: string,
   firecrawlKey: string,
@@ -807,12 +825,20 @@ async function scrapeEmailFromWebsite(
   })();
   if (!origin) return { email: null, reason: "no_url" };
   const urls = [
-    origin,
     `${origin}/impressum`,
+    `${origin}/impressum/`,
     `${origin}/impressum.html`,
     `${origin}/kontakt`,
+    `${origin}/kontakt/`,
     `${origin}/kontakt.html`,
+    `${origin}/imprint`,
+    `${origin}/legal`,
+    `${origin}/rechtliches`,
     `${origin}/datenschutz`,
+    `${origin}/ueber-uns`,
+    `${origin}/team`,
+    `${origin}/praxis`,
+    origin,
   ];
   let anyScraped = false;
   for (const url of urls) {
@@ -827,7 +853,8 @@ async function scrapeEmailFromWebsite(
           url,
           formats: ["markdown", "html"],
           onlyMainContent: false,
-          timeout: 15000,
+          waitFor: 2500,
+          timeout: 20000,
         }),
       });
       if (!res.ok) continue;
@@ -840,14 +867,21 @@ async function scrapeEmailFromWebsite(
       if (!md && !html) continue;
       anyScraped = true;
 
-      // 1. Direkt aus mailto: (verlässlichste Quelle)
+      // 1. Cloudflare-obfuscated emails
+      const cf = decodeCloudflareEmails(html);
+      if (cf.length > 0) {
+        const good = cf.find((e) => !BLOCK_EMAIL_DOMAINS.has(e.split("@")[1] ?? ""));
+        if (good) return { email: good, reason: "ok" };
+      }
+
+      // 2. Direkt aus mailto: (verlässlichste Quelle)
       const mailto = html.match(/mailto:([^"'?\s<>]+)/i);
       if (mailto) {
         const e = extractEmail(mailto[1]);
         if (e) return { email: e, reason: "ok" };
       }
 
-      // 2. Aus deobfuscated Markdown + HTML
+      // 3. Aus deobfuscated Markdown + HTML
       const combined = deobfuscateEmails(`${md}\n${html}`);
       const email = extractEmail(combined);
       if (email) return { email, reason: "ok" };
