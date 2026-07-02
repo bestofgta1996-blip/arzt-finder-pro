@@ -15,6 +15,7 @@ import {
 } from "@/lib/marketing.functions";
 import {
   scrapeGoogleMapsHealthcare,
+  scrapeOsmHealthcare,
   DSB_ZIELGRUPPEN,
   type DsbZielgruppe,
 } from "@/lib/sources.functions";
