@@ -585,16 +585,12 @@ interface GmapsPlace {
   internationalPhoneNumber?: string;
 }
 
-const GMAPS_GATEWAY = "https://connector-gateway.lovable.dev/google_maps";
+const GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
+const GOOGLE_PLACES_URL = "https://places.googleapis.com/v1";
 
-async function geocodePlz(plz: string, apiKey: string, lovableKey: string): Promise<{ lat: number; lng: number; stadt: string | null } | null> {
-  const url = `${GMAPS_GATEWAY}/maps/api/geocode/json?address=${encodeURIComponent(plz + ", Germany")}&region=de&language=de`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": apiKey,
-    },
-  });
+async function geocodePlz(plz: string, apiKey: string): Promise<{ lat: number; lng: number; stadt: string | null } | null> {
+  const url = `${GOOGLE_GEOCODE_URL}?address=${encodeURIComponent(plz + ", Germany")}&region=de&language=de&key=${apiKey}`;
+  const res = await fetch(url);
   if (!res.ok) return null;
   const json = (await res.json()) as {
     results?: Array<{
@@ -617,7 +613,6 @@ async function searchPlaces(
   radiusMeters: number,
   totalWanted: number,
   apiKey: string,
-  lovableKey: string,
 ): Promise<GmapsPlace[]> {
   const all: GmapsPlace[] = [];
   let pageToken: string | undefined;
@@ -635,11 +630,10 @@ async function searchPlaces(
       },
     };
     if (pageToken) body.pageToken = pageToken;
-    const res = await fetch(`${GMAPS_GATEWAY}/places/v1/places:searchText`, {
+    const res = await fetch(`${GOOGLE_PLACES_URL}/places:searchText`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": apiKey,
+        "X-Goog-Api-Key": apiKey,
         "Content-Type": "application/json",
         "X-Goog-FieldMask":
           "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,nextPageToken",
@@ -667,11 +661,10 @@ async function searchNearbyCell(
   center: { lat: number; lng: number },
   radiusMeters: number,
   apiKey: string,
-  lovableKey: string,
 ): Promise<GmapsPlace[]> {
   // Falls kein passender Google-Typ verfügbar ist, auf Text-Search zurückfallen.
   if (includedTypes.length === 0 && textQueryFallback) {
-    return searchPlaces(textQueryFallback, center, radiusMeters, 60, apiKey, lovableKey);
+    return searchPlaces(textQueryFallback, center, radiusMeters, 60, apiKey);
   }
   const body: Record<string, unknown> = {
     includedTypes,
@@ -685,11 +678,10 @@ async function searchNearbyCell(
       },
     },
   };
-  const res = await fetch(`${GMAPS_GATEWAY}/places/v1/places:searchNearby`, {
+  const res = await fetch(`${GOOGLE_PLACES_URL}/places:searchNearby`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": apiKey,
+      "X-Goog-Api-Key": apiKey,
       "Content-Type": "application/json",
       "X-Goog-FieldMask":
         "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber",
@@ -746,7 +738,6 @@ async function searchPlacesGrid(
   radiusKm: number,
   totalWanted: number,
   apiKey: string,
-  lovableKey: string,
 ): Promise<{ places: GmapsPlace[]; cellsTotal: number; cellsUsed: number }> {
   const includedTypes = GMAPS_INCLUDED_TYPES[zielgruppe] ?? [];
   const { cells, cellRadiusMeters } = buildGridCells(center, radiusKm);
@@ -765,7 +756,6 @@ async function searchPlacesGrid(
         cells[i],
         cellRadiusMeters,
         apiKey,
-        lovableKey,
       );
       cellsUsed++;
       for (const p of results) {
@@ -941,11 +931,10 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         }
       };
 
-      const lovableKey = process.env.LOVABLE_API_KEY;
       const gmapsKey = process.env.GOOGLE_MAPS_API_KEY;
       const firecrawlKey = process.env.FIRECRAWL_API_KEY;
-      if (!lovableKey || !gmapsKey) {
-        const r = { ok: false, error: "Google Maps Connector nicht konfiguriert.", found: 0, inserted: 0, skipped: 0, places: 0, preview: [] };
+      if (!gmapsKey) {
+        const r = { ok: false, error: "GOOGLE_MAPS_API_KEY ist nicht konfiguriert.", found: 0, inserted: 0, skipped: 0, places: 0, preview: [] };
         await logSearch(r);
         return r;
       }
@@ -955,7 +944,7 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         return r;
       }
 
-      const geo = await geocodePlz(data.plz, gmapsKey, lovableKey);
+      const geo = await geocodePlz(data.plz, gmapsKey);
       if (!geo) {
         const r = { ok: false, error: `PLZ ${data.plz} konnte nicht geocodiert werden.`, found: 0, inserted: 0, skipped: 0, places: 0, preview: [] };
         await logSearch(r);
@@ -971,7 +960,6 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
         data.radiusKm,
         data.limit,
         gmapsKey,
-        lovableKey,
       );
       const placesById = new Map<string, GmapsPlace>();
       for (const p of grid.places) {
@@ -982,7 +970,7 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
       if (placesById.size < Math.min(data.limit, 60)) {
         const radiusMeters = Math.min(data.radiusKm * 1000, 50000);
         for (const hint of hints.slice(0, 2)) {
-          const results = await searchPlaces(hint, geo, radiusMeters, 60, gmapsKey, lovableKey);
+          const results = await searchPlaces(hint, geo, radiusMeters, 60, gmapsKey);
           for (const p of results) {
             if (!p.id || placesById.has(p.id)) continue;
             placesById.set(p.id, p);
@@ -1236,14 +1224,13 @@ export const scrapeOsmHealthcare = createServerFn({ method: "POST" })
         }
       };
 
-      const lovableKey = process.env.LOVABLE_API_KEY;
       const gmapsKey = process.env.GOOGLE_MAPS_API_KEY;
       const firecrawlKey = process.env.FIRECRAWL_API_KEY;
 
       // Geocoding via Google (falls verfügbar), sonst Nominatim
       let geo: { lat: number; lng: number; stadt: string | null } | null = null;
-      if (lovableKey && gmapsKey) {
-        geo = await geocodePlz(data.plz, gmapsKey, lovableKey);
+      if (gmapsKey) {
+        geo = await geocodePlz(data.plz, gmapsKey);
       }
       if (!geo) {
         try {
