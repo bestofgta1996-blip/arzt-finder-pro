@@ -31,7 +31,10 @@ import {
   RefreshCw,
   Search,
   MapPin,
+  Download,
 } from "lucide-react";
+
+const OHNE_KATEGORIE = "Ohne Kategorie";
 
 // Microsoft Power Apps CRM Farbwelt (Fluent UI Purple)
 const CRM_PURPLE = "#742774";
@@ -94,23 +97,19 @@ export function MarketingPanel() {
     cellsUsed?: number;
   } | null>(null);
 
-  // Gespeicherte Marketing-Leads (nur Google-Maps-Treffer)
+  // Gespeicherte Marketing-Leads (alle Quellen: Kartenrecherche, Websuche, Import …)
   const [leads, setLeads] = useState<DbLead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
+  const [kategorie, setKategorie] = useState<string>("alle");
 
   const reloadLeads = async () => {
     setLeadsLoading(true);
     try {
       const r = await fetchLeads({ data: { mode } });
       if (r.ok) {
-        // Nur Treffer aus der Recherche (Google Maps) mit gültiger E-Mail
-        setLeads(
-          r.leads.filter(
-            (l) =>
-              (l.quelle_typ === "google_maps" || l.quelle_typ === "openstreetmap") &&
-              /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email),
-          ),
-        );
+        // Alle gesammelten Kontakte mit gültiger E-Mail – unabhängig von der Quelle,
+        // damit nichts aus früheren Läufen "verschwindet".
+        setLeads(r.leads.filter((l) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email)));
       }
     } finally {
       setLeadsLoading(false);
@@ -280,6 +279,49 @@ export function MarketingPanel() {
     () => (onlyWithEmail ? results.filter((r) => !!r.email) : results),
     [results, onlyWithEmail],
   );
+
+  // Kategorien = Fachgebiet/Zielgruppe je Lead (z. B. "Zahnärzte", "Medizinrecht", "Orthopädie" …)
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of leads) {
+      const key = (l.fachgebiet ?? "").trim() || OHNE_KATEGORIE;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [leads]);
+
+  const displayedLeads = useMemo(() => {
+    if (kategorie === "alle") return leads;
+    return leads.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === kategorie);
+  }, [leads, kategorie]);
+
+  useEffect(() => {
+    if (kategorie !== "alle" && !categories.some(([name]) => name === kategorie)) {
+      setKategorie("alle");
+    }
+  }, [categories, kategorie]);
+
+  const exportKategorieCSV = () => {
+    const headers = ["Name", "Kategorie", "Stadt", "Telefon", "E-Mail", "Website", "Status"];
+    const escape = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = displayedLeads.map((l) =>
+      [l.name ?? "", l.fachgebiet ?? OHNE_KATEGORIE, l.stadt ?? "", l.telefon ?? "", l.email, l.website ?? "", STATUS_LABEL[l.status]]
+        .map(escape)
+        .join(";"),
+    );
+    const csv = [headers.join(";"), ...rows].join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const label = kategorie === "alle" ? "alle" : kategorie;
+    a.download = `marketingliste_${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const setStatus = async (id: string, status: LeadStatusDb) => {
     const r = await patchLead({ data: { id, status } });
@@ -522,25 +564,61 @@ export function MarketingPanel() {
         <div className="px-4 py-2 border-b flex items-center gap-2 text-sm font-medium">
           <Mail className="size-4" style={{ color: CRM_PURPLE }} />
           Marketingliste
-          <Badge variant="outline" className="text-[10px]">{leads.length}</Badge>
+          <Badge variant="outline" className="text-[10px]">{displayedLeads.length}</Badge>
           <span className="text-xs text-muted-foreground font-normal">
-            · nur importierte Kartenrecherche-Treffer mit E-Mail
+            · alle gesammelten Kontakte mit E-Mail, egal aus welcher Quelle
           </span>
           <div className="flex-1" />
+          <Button size="sm" variant="ghost" onClick={exportKategorieCSV} disabled={displayedLeads.length === 0}>
+            <Download className="size-4 mr-1" />
+            CSV
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => void reloadLeads()} disabled={leadsLoading}>
             <RefreshCw className={`size-4 ${leadsLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
+
+        {categories.length > 0 && (
+          <div className="px-4 py-2 border-b flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setKategorie("alle")}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                kategorie === "alle" ? "text-white" : "bg-muted hover:bg-muted/80"
+              }`}
+              style={kategorie === "alle" ? { backgroundColor: CRM_PURPLE } : undefined}
+            >
+              Alle · {leads.length}
+            </button>
+            {categories.map(([name, count]) => (
+              <button
+                key={name}
+                onClick={() => setKategorie(name)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  kategorie === name ? "text-white" : "bg-muted hover:bg-muted/80"
+                }`}
+                style={kategorie === name ? { backgroundColor: CRM_PURPLE } : undefined}
+              >
+                {name} · {count}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="max-h-[480px] overflow-auto">
           {leads.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-10">
               Noch keine Kontakte in der Marketingliste. Führe oben eine Suche aus – Treffer mit E-Mail landen automatisch hier.
+            </p>
+          ) : displayedLeads.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-10">
+              Keine Kontakte in dieser Kategorie.
             </p>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0">
                 <tr className="border-b">
                   <th className="text-left px-3 py-2 font-medium">Name</th>
+                  <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Kategorie</th>
                   <th className="text-left px-3 py-2 font-medium">Stadt</th>
                   <th className="text-left px-3 py-2 font-medium">Telefon</th>
                   <th className="text-left px-3 py-2 font-medium">E-Mail</th>
@@ -550,9 +628,12 @@ export function MarketingPanel() {
                 </tr>
               </thead>
               <tbody>
-                {leads.map((l) => (
+                {displayedLeads.map((l) => (
                   <tr key={l.id} className="border-b hover:bg-accent/40">
                     <td className="px-3 py-2 font-medium truncate max-w-[200px]">{l.name ?? "—"}</td>
+                    <td className="px-3 py-2 text-muted-foreground hidden md:table-cell truncate max-w-[160px]">
+                      {l.fachgebiet ?? OHNE_KATEGORIE}
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{l.stadt ?? "—"}</td>
                     <td className="px-3 py-2">
                       {l.telefon ? (
