@@ -18,7 +18,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone, Upload, Plus, ChevronDown, FileSpreadsheet, FileJson, FileText, Contact } from "lucide-react";
+import { Download, Search as SearchIcon, Trash2, Pencil, ExternalLink, Mail, Phone, Upload, Plus, ChevronDown, FileSpreadsheet, FileJson, FileText, Contact, CloudUpload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 type ExportFormat = "csv-semi" | "csv-comma" | "tsv" | "xlsx" | "json" | "vcf";
@@ -29,9 +29,11 @@ interface Props {
   onUpdate: (id: string, patch: Partial<Lead>) => void;
   onDelete: (id: string) => void;
   onDeleteMany: (ids: string[]) => void;
+  onSyncToCloud: () => void | Promise<void>;
+  syncing: boolean;
 }
 
-export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany }: Props) {
+export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany, onSyncToCloud, syncing }: Props) {
   const [q, setQ] = useState("");
   const [landFilter, setLandFilter] = useState<"alle" | Country>("alle");
   const [statusFilter, setStatusFilter] = useState<"alle" | LeadStatus>("alle");
@@ -174,6 +176,10 @@ export function LeadsList({ leads, onAddLeads, onUpdate, onDelete, onDeleteMany 
               </Button>
               <Button size="sm" variant="outline" onClick={() => setCsvOpen(true)}>
                 <Upload className="size-4" /> Import
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void onSyncToCloud()} disabled={syncing || leads.length === 0}>
+                {syncing ? <Loader2 className="size-4 animate-spin" /> : <CloudUpload className="size-4" />}
+                In Marketingliste übernehmen
               </Button>
               <ExportMenu
                 label="Export"

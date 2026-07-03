@@ -12,9 +12,31 @@ import { TemplatesPanel } from "@/components/TemplatesPanel";
 import { MarketingPanel } from "@/components/MarketingPanel";
 import { TendersPanel } from "@/components/TendersPanel";
 import { loadLeads, saveLeads, type Lead } from "@/lib/leads";
-import { upsertLeads, LAENDER } from "@/lib/marketing.functions";
+import { upsertLeads, LAENDER, type LandCode } from "@/lib/marketing.functions";
 import { ModeProvider, useMode, MODE_LABEL, type AppMode } from "@/hooks/useMode";
 import { Stethoscope, Globe2, Menu, ListChecks, FileSearch, Search, ClipboardPaste, Database, FileText, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
+
+function toCloudRows(incoming: Lead[], mode: AppMode) {
+  return incoming
+    .filter((l) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email))
+    .map((l) => {
+      const land: LandCode = (LAENDER as readonly string[]).includes(l.land) ? (l.land as LandCode) : "DE";
+      return {
+        land,
+        email: l.email.toLowerCase(),
+        fachgebiet: l.fachgebiet ?? null,
+        name: l.name ?? null,
+        telefon: l.telefon ?? null,
+        website: l.website ?? null,
+        stadt: l.stadt ?? null,
+        quelle_url: l.website ?? null,
+        quelle_typ: l.quelle ?? null,
+        gerichtsgutachter: l.gerichtsgutachter,
+        mode,
+      };
+    });
+}
 
 const NAV_ITEMS = [
   { value: "marketing", label: "Marketinglisten", icon: ListChecks },
@@ -97,28 +119,37 @@ function HomeInner() {
     });
 
     // Push to Cloud marketing list (best-effort, silent)
-    const cloudRows = incoming
-      .filter((l) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(l.email))
-      .map((l) => {
-        const land = (LAENDER as readonly string[]).includes(l.land) ? l.land : "DE";
-        return {
-          land: land as never,
-          email: l.email.toLowerCase(),
-          fachgebiet: l.fachgebiet ?? null,
-          name: l.name ?? null,
-          telefon: l.telefon ?? null,
-          website: l.website ?? null,
-          stadt: l.stadt ?? null,
-          quelle_url: l.website ?? null,
-          quelle_typ: l.quelle ?? null,
-          gerichtsgutachter: l.gerichtsgutachter,
-          mode,
-        };
-      });
+    const cloudRows = toCloudRows(incoming, mode);
     if (cloudRows.length > 0) {
       cloudUpsert({ data: { leads: cloudRows } }).catch(() => {
         /* offline: ignore, lokal bleibt erhalten */
       });
+    }
+  };
+
+  const [syncing, setSyncing] = useState(false);
+
+  // Übernimmt alle bereits gefundenen lokalen Leads (auch aus früheren Sitzungen)
+  // nachträglich in die dauerhafte Marketingliste (Cloud).
+  const syncLocalToCloud = async () => {
+    const rows = toCloudRows(leads, mode);
+    if (rows.length === 0) {
+      toast.error("Keine lokalen Kontakte mit gültiger E-Mail zum Übernehmen.");
+      return;
+    }
+    setSyncing(true);
+    try {
+      let inserted = 0;
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const r = await cloudUpsert({ data: { leads: chunk } });
+        if (r.ok) inserted += r.inserted;
+      }
+      toast.success(`${inserted} von ${rows.length} Kontakten in die Marketingliste übernommen.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Übernahme fehlgeschlagen");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -241,7 +272,15 @@ function HomeInner() {
           <TabsContent value="suche"><SearchPanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="einfuegen"><PastePanel onAddLeads={addLeads} /></TabsContent>
           <TabsContent value="leads">
-            <LeadsList leads={leads} onAddLeads={addLeads} onUpdate={updateLead} onDelete={deleteLead} onDeleteMany={deleteMany} />
+            <LeadsList
+              leads={leads}
+              onAddLeads={addLeads}
+              onUpdate={updateLead}
+              onDelete={deleteLead}
+              onDeleteMany={deleteMany}
+              onSyncToCloud={syncLocalToCloud}
+              syncing={syncing}
+            />
           </TabsContent>
           <TabsContent value="vorlagen"><TemplatesPanel /></TabsContent>
         </Tabs>
