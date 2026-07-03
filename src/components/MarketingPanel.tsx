@@ -57,6 +57,107 @@ const STATUS_LABEL: Record<LeadStatusDb, string> = {
   nicht_relevant: "Nicht relevant",
 };
 
+function ResultCard({ r }: { r: PreviewRow }) {
+  return (
+    <div className="rounded-lg border bg-background p-3 space-y-1.5">
+      <p className="font-medium truncate">{r.name ?? "—"}</p>
+      {(r.stadt || r.adresse) && (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <MapPin className="size-3.5 shrink-0 mt-0.5" />
+          <span className="truncate">{r.adresse ?? r.stadt}</span>
+        </p>
+      )}
+      {r.telefon && (
+        <a href={`tel:${r.telefon}`} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+          <Phone className="size-3.5 shrink-0" /> {r.telefon}
+        </a>
+      )}
+      {r.email ? (
+        <a href={`mailto:${r.email}`} className="flex items-center gap-1.5 text-xs text-primary hover:underline break-all">
+          <Mail className="size-3.5 shrink-0" /> {r.email}
+        </a>
+      ) : (
+        <p className="text-xs text-muted-foreground">keine E-Mail</p>
+      )}
+      {r.website && (
+        <a
+          href={r.website}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="flex items-center gap-1.5 text-xs text-primary hover:underline truncate"
+        >
+          <ExternalLink className="size-3.5 shrink-0" />
+          <span className="truncate">{r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+        </a>
+      )}
+    </div>
+  );
+}
+
+function LeadCard({
+  lead,
+  showCategory,
+  onStatusChange,
+  onDelete,
+}: {
+  lead: DbLead;
+  showCategory: boolean;
+  onStatusChange: (status: LeadStatusDb) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-background p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-medium truncate min-w-0">{lead.name ?? "—"}</p>
+        <Button size="sm" variant="ghost" className="size-7 shrink-0 -mt-1 -mr-1" onClick={onDelete} aria-label="Lead entfernen">
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+      {showCategory && lead.fachgebiet && (
+        <Badge variant="secondary" className="text-[10px] font-normal">
+          {lead.fachgebiet}
+        </Badge>
+      )}
+      <div className="space-y-1.5">
+        {lead.stadt && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <MapPin className="size-3.5 shrink-0" /> {lead.stadt}
+          </p>
+        )}
+        {lead.telefon && (
+          <a href={`tel:${lead.telefon}`} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+            <Phone className="size-3.5 shrink-0" /> {lead.telefon}
+          </a>
+        )}
+        <a href={`mailto:${lead.email}`} className="flex items-center gap-1.5 text-xs text-primary hover:underline break-all">
+          <Mail className="size-3.5 shrink-0" /> {lead.email}
+        </a>
+        {lead.website && (
+          <a
+            href={lead.website}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="flex items-center gap-1.5 text-xs text-primary hover:underline truncate"
+          >
+            <ExternalLink className="size-3.5 shrink-0" />
+            <span className="truncate">{lead.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+          </a>
+        )}
+      </div>
+      <Select value={lead.status} onValueChange={(v) => onStatusChange(v as LeadStatusDb)}>
+        <SelectTrigger className="h-7 text-xs w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(STATUS_LABEL) as LeadStatusDb[]).map((s) => (
+            <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 export function MarketingPanel() {
   const { mode } = useMode();
   const fetchLeads = useServerFn(listLeads);
@@ -295,6 +396,15 @@ export function MarketingPanel() {
     return leads.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === kategorie);
   }, [leads, kategorie]);
 
+  // Bei "Alle" strukturiert nach Kategorie gruppieren, statt einer langen flachen Liste.
+  const groupedLeads = useMemo(() => {
+    if (kategorie !== "alle") return null;
+    return categories.map(([name]) => [
+      name,
+      leads.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === name),
+    ] as [string, DbLead[]]);
+  }, [categories, leads, kategorie]);
+
   useEffect(() => {
     if (kategorie !== "alle" && !categories.some(([name]) => name === kategorie)) {
       setKategorie("alle");
@@ -508,70 +618,28 @@ export function MarketingPanel() {
               Noch keine Suche gestartet. Wähle Zielgruppe, PLZ und Radius und klicke „Suchen &amp; importieren".
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 sticky top-0">
-                <tr className="border-b">
-                  <th className="text-left px-3 py-2 font-medium">Name</th>
-                  <th className="text-left px-3 py-2 font-medium">Stadt</th>
-                  <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Adresse</th>
-                  <th className="text-left px-3 py-2 font-medium">Telefon</th>
-                  <th className="text-left px-3 py-2 font-medium">E-Mail</th>
-                  <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Website</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayedResults.map((r, i) => (
-                  <tr key={i} className="border-b hover:bg-accent/40">
-                    <td className="px-3 py-2 font-medium truncate max-w-[200px]">{r.name ?? "—"}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{r.stadt ?? "—"}</td>
-                    <td className="px-3 py-2 text-muted-foreground hidden md:table-cell truncate max-w-[280px]">
-                      {r.adresse ?? "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {r.telefon ? (
-                        <a href={`tel:${r.telefon}`} className="text-primary hover:underline inline-flex items-center gap-1">
-                          <Phone className="size-3" /> {r.telefon}
-                        </a>
-                      ) : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {r.email ? (
-                        <a href={`mailto:${r.email}`} className="text-primary hover:underline inline-flex items-center gap-1 break-all">
-                          <Mail className="size-3" /> {r.email}
-                        </a>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">keine E-Mail</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 hidden lg:table-cell">
-                      {r.website ? (
-                        <a href={r.website} target="_blank" rel="noreferrer noopener" className="text-primary hover:underline inline-flex items-center gap-1 truncate max-w-[200px]">
-                          {r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                          <ExternalLink className="size-3 shrink-0" />
-                        </a>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-3">
+              {displayedResults.map((r, i) => (
+                <ResultCard key={i} r={r} />
+              ))}
+            </div>
           )}
         </div>
       </div>
 
       {/* Gespeicherte Marketingliste (nur Recherche-Treffer) */}
       <div className="rounded-md border bg-card">
-        <div className="px-4 py-2 border-b flex items-center gap-2 text-sm font-medium">
-          <Mail className="size-4" style={{ color: CRM_PURPLE }} />
+        <div className="px-4 py-2 border-b flex items-center gap-2 text-sm font-medium flex-wrap">
+          <Mail className="size-4 shrink-0" style={{ color: CRM_PURPLE }} />
           Marketingliste
           <Badge variant="outline" className="text-[10px]">{displayedLeads.length}</Badge>
-          <span className="text-xs text-muted-foreground font-normal">
+          <span className="hidden sm:inline text-xs text-muted-foreground font-normal">
             · alle gesammelten Kontakte mit E-Mail, egal aus welcher Quelle
           </span>
           <div className="flex-1" />
           <Button size="sm" variant="ghost" onClick={exportKategorieCSV} disabled={displayedLeads.length === 0}>
-            <Download className="size-4 mr-1" />
-            CSV
+            <Download className="size-4 sm:mr-1" />
+            <span className="hidden sm:inline">CSV</span>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => void reloadLeads()} disabled={leadsLoading}>
             <RefreshCw className={`size-4 ${leadsLoading ? "animate-spin" : ""}`} />
@@ -604,7 +672,7 @@ export function MarketingPanel() {
           </div>
         )}
 
-        <div className="max-h-[480px] overflow-auto">
+        <div className="max-h-[600px] overflow-auto">
           {leads.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-10">
               Noch keine Kontakte in der Marketingliste. Führe oben eine Suche aus – Treffer mit E-Mail landen automatisch hier.
@@ -613,77 +681,40 @@ export function MarketingPanel() {
             <p className="text-sm text-muted-foreground text-center py-10">
               Keine Kontakte in dieser Kategorie.
             </p>
+          ) : groupedLeads ? (
+            <div className="divide-y">
+              {groupedLeads.map(([name, groupLeads]) => (
+                <div key={name} className="p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold">{name}</h3>
+                    <Badge variant="outline" className="text-[10px]">{groupLeads.length}</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {groupLeads.map((l) => (
+                      <LeadCard
+                        key={l.id}
+                        lead={l}
+                        showCategory={false}
+                        onStatusChange={(status) => setStatus(l.id, status)}
+                        onDelete={() => removeLead(l.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 sticky top-0">
-                <tr className="border-b">
-                  <th className="text-left px-3 py-2 font-medium">Name</th>
-                  <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Kategorie</th>
-                  <th className="text-left px-3 py-2 font-medium">Stadt</th>
-                  <th className="text-left px-3 py-2 font-medium">Telefon</th>
-                  <th className="text-left px-3 py-2 font-medium">E-Mail</th>
-                  <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Website</th>
-                  <th className="text-left px-3 py-2 font-medium">Status</th>
-                  <th className="text-right px-3 py-2 font-medium">Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayedLeads.map((l) => (
-                  <tr key={l.id} className="border-b hover:bg-accent/40">
-                    <td className="px-3 py-2 font-medium truncate max-w-[200px]">{l.name ?? "—"}</td>
-                    <td className="px-3 py-2 text-muted-foreground hidden md:table-cell truncate max-w-[160px]">
-                      {l.fachgebiet ?? OHNE_KATEGORIE}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{l.stadt ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      {l.telefon ? (
-                        <a href={`tel:${l.telefon}`} className="text-primary hover:underline inline-flex items-center gap-1">
-                          <Phone className="size-3" /> {l.telefon}
-                        </a>
-                      ) : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <a href={`mailto:${l.email}`} className="text-primary hover:underline inline-flex items-center gap-1 break-all">
-                        <Mail className="size-3" /> {l.email}
-                      </a>
-                    </td>
-                    <td className="px-3 py-2 hidden lg:table-cell">
-                      {l.website ? (
-                        <a href={l.website} target="_blank" rel="noreferrer noopener" className="text-primary hover:underline inline-flex items-center gap-1 truncate max-w-[200px]">
-                          {l.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                          <ExternalLink className="size-3 shrink-0" />
-                        </a>
-                      ) : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Select
-                        value={l.status}
-                        onValueChange={(v) => setStatus(l.id, v as LeadStatusDb)}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-[130px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(Object.keys(STATUS_LABEL) as LeadStatusDb[]).map((s) => (
-                            <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeLead(l.id)}
-                        aria-label="Lead entfernen"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-3">
+              {displayedLeads.map((l) => (
+                <LeadCard
+                  key={l.id}
+                  lead={l}
+                  showCategory
+                  onStatusChange={(status) => setStatus(l.id, status)}
+                  onDelete={() => removeLead(l.id)}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>

@@ -149,11 +149,14 @@ function HomeInner() {
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base md:text-lg font-semibold leading-tight">
-              {mode === "dsb"
-                ? "IMB Akquise · Datenschutz – DSB-Neukunden im Gesundheitswesen"
-                : "IMB Akquise – Lead-Generierung für Ärzte & Gutachter"}
+              <span className="sm:hidden">{mode === "dsb" ? "IMB Akquise · Datenschutz" : "IMB Akquise"}</span>
+              <span className="hidden sm:inline">
+                {mode === "dsb"
+                  ? "IMB Akquise · Datenschutz – DSB-Neukunden im Gesundheitswesen"
+                  : "IMB Akquise – Lead-Generierung für Ärzte & Gutachter"}
+              </span>
             </h1>
-            <p className="truncate text-xs text-muted-foreground flex items-center gap-1">
+            <p className="truncate text-xs text-muted-foreground hidden sm:flex items-center gap-1">
               <Globe2 className="size-3 shrink-0" />
               <span className="truncate">
                 {mode === "dsb"
