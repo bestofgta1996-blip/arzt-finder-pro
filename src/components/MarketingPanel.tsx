@@ -242,7 +242,7 @@ export function MarketingPanel() {
     try {
       const runner = source === "gmaps" ? runGmaps : runOsm;
       const r = await runner({
-        data: { zielgruppe, plz: plz.trim(), radiusKm: radius, limit },
+        data: { zielgruppe, plz: plz.trim(), radiusKm: radius, limit, mode },
       });
       if (!r.ok) {
         toast.error(r.error ?? "Suche fehlgeschlagen");
@@ -319,7 +319,7 @@ export function MarketingPanel() {
             try {
               const runner = src === "gmaps" ? runGmaps : runOsm;
               const r = await runner({
-                data: { zielgruppe: zg, plz: plz.trim(), radiusKm: currentRadius, limit },
+                data: { zielgruppe: zg, plz: plz.trim(), radiusKm: currentRadius, limit, mode },
               });
               if (r.ok) {
                 sourcesUsed.add(src);

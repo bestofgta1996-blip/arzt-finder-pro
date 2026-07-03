@@ -362,6 +362,7 @@ const ScrapeDsbInput = z.object({
   zielgruppe: z.enum(DSB_ZIELGRUPPEN),
   ort: z.string().min(2).max(120),
   limit: z.number().int().min(1).max(30).optional().default(10),
+  mode: ModeSchema,
 });
 
 export const scrapeDsbHealthcare = createServerFn({ method: "POST" })
@@ -391,7 +392,7 @@ export const scrapeDsbHealthcare = createServerFn({ method: "POST" })
             fachgebiet: data.zielgruppe,
             ort: data.ort,
             land: "DE",
-            mode: "dsb",
+            mode: data.mode,
             params: { limit: data.limit },
             found: result.found,
             inserted: result.inserted,
@@ -488,7 +489,7 @@ export const scrapeDsbHealthcare = createServerFn({ method: "POST" })
         quelle_url: c.quelle_url.slice(0, 800),
         quelle_typ: "dsb_healthcare",
         gerichtsgutachter: false,
-        mode: "dsb" as const,
+        mode: data.mode,
       }));
 
       if (leadsToInsert.length === 0) {
@@ -558,6 +559,7 @@ const ScrapeGmapsInput = z.object({
   plz: z.string().trim().regex(/^\d{4,5}$/, "PLZ muss 4–5 Ziffern haben"),
   radiusKm: z.number().int().min(1).max(50).optional().default(10),
   limit: z.number().int().min(1).max(300).optional().default(120),
+  mode: ModeSchema,
 });
 
 // Google Places (New) primary type per Zielgruppe – narrows nearby-search results.
@@ -925,7 +927,7 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
             fachgebiet: data.zielgruppe,
             ort: data.plz,
             land: "DE",
-            mode: "dsb",
+            mode: data.mode,
             params: { radiusKm: data.radiusKm, limit: data.limit },
             found: result.found,
             inserted: result.inserted,
@@ -1060,7 +1062,7 @@ export const scrapeGoogleMapsHealthcare = createServerFn({ method: "POST" })
             quelle_url: e.place.websiteUri?.slice(0, 800) ?? null,
             quelle_typ: "google_maps",
             gerichtsgutachter: false,
-            mode: "dsb" as const,
+            mode: data.mode,
           };
           return base;
         });
@@ -1220,7 +1222,7 @@ export const scrapeOsmHealthcare = createServerFn({ method: "POST" })
             fachgebiet: data.zielgruppe,
             ort: data.plz,
             land: "DE",
-            mode: "dsb",
+            mode: data.mode,
             params: { radiusKm: data.radiusKm, limit: data.limit },
             found: result.found,
             inserted: result.inserted,
@@ -1381,7 +1383,7 @@ export const scrapeOsmHealthcare = createServerFn({ method: "POST" })
             quelle_url: it.website?.slice(0, 800) ?? null,
             quelle_typ: "openstreetmap",
             gerichtsgutachter: false,
-            mode: "dsb" as const,
+            mode: data.mode,
           };
         });
 
