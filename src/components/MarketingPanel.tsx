@@ -377,6 +377,9 @@ export function MarketingPanel() {
                     cellsTotal: "cellsTotal" in r ? r.cellsTotal : undefined,
                     cellsUsed: "cellsUsed" in r ? r.cellsUsed : undefined,
                   });
+                  // Sichtbare Marketingliste sofort aktualisieren, damit
+                  // der Nutzer die neuen Kontakte während des Laufs sieht.
+                  if (r.inserted > 0) void reloadLeads();
                 }
               } catch (e) {
                 console.warn("Testlauf-Fehler", currentPlz, zg, src, e);
