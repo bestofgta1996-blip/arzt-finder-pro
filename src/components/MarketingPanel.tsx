@@ -574,7 +574,7 @@ export function MarketingPanel() {
                     variant="secondary"
                     className="h-9 flex-1"
                   >
-                    Testlauf bis 100
+                    Testlauf bis {testTarget}
                   </Button>
                 )
               )}
