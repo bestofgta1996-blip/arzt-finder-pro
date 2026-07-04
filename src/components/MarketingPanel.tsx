@@ -178,6 +178,7 @@ export function MarketingPanel() {
   const [testRunning, setTestRunning] = useState(false);
   const [testCancel, setTestCancel] = useState(false);
   const cancelRef = useRef(false);
+  const [testTarget, setTestTarget] = useState(500);
   const [testProgress, setTestProgress] = useState<{
     current: number;
     target: number;
@@ -185,6 +186,7 @@ export function MarketingPanel() {
     radius: number;
     iteration: number;
     source: string;
+    plz: string;
   } | null>(null);
 
   // Suchergebnisse (aktueller Lauf)
