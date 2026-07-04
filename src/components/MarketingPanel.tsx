@@ -581,13 +581,35 @@ export function MarketingPanel() {
             </div>
           </div>
 
+          {mode === "dsb" && (
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <div>
+                <Label className="text-xs">Testlauf-Ziel (Leads)</Label>
+                <Input
+                  type="number"
+                  min={10}
+                  max={5000}
+                  step={50}
+                  value={testTarget}
+                  onChange={(e) => setTestTarget(Math.max(10, Math.min(5000, Number(e.target.value) || 100)))}
+                  className="w-32 h-9"
+                  disabled={testRunning}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground flex-1 min-w-[200px]">
+                Durchsucht alle Zielgruppen über {DE_CITY_PLZ.length}+ deutsche Städte
+                (PLZ optional – eingegebene PLZ wird zuerst genutzt), bis das Ziel erreicht ist.
+              </p>
+            </div>
+          )}
+
           {testProgress && (
             <div className="mt-3 rounded border bg-purple-50 px-3 py-2 text-xs text-purple-900">
-              <div className="flex items-center gap-2 font-medium">
+              <div className="flex items-center gap-2 font-medium flex-wrap">
                 <Loader2 className="size-3 animate-spin" />
                 Testlauf: {testProgress.current} / {testProgress.target} Leads
                 <span className="text-purple-700">
-                  · {testProgress.source} · {testProgress.zielgruppe} · Radius {testProgress.radius} km · Runde {testProgress.iteration}
+                  · {testProgress.source} · {testProgress.zielgruppe} · PLZ {testProgress.plz} · Radius {testProgress.radius} km · Runde {testProgress.iteration}
                 </span>
               </div>
               <div className="mt-1 h-1.5 w-full rounded bg-purple-200 overflow-hidden">
