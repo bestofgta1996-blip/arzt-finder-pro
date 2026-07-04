@@ -271,24 +271,69 @@ export function MarketingPanel() {
     }
   };
 
+  // Große deutsche Städte + einige mittlere – deckt bewusst weite Regionen ab,
+  // damit der Testlauf nicht auf einer einzigen PLZ hängen bleibt.
+  const DE_CITY_PLZ: string[] = [
+    "10115", // Berlin
+    "20095", // Hamburg
+    "80331", // München
+    "50667", // Köln
+    "60311", // Frankfurt a. M.
+    "70173", // Stuttgart
+    "40213", // Düsseldorf
+    "44135", // Dortmund
+    "45127", // Essen
+    "04109", // Leipzig
+    "28195", // Bremen
+    "01067", // Dresden
+    "30159", // Hannover
+    "90402", // Nürnberg
+    "47051", // Duisburg
+    "44787", // Bochum
+    "42103", // Wuppertal
+    "33602", // Bielefeld
+    "53111", // Bonn
+    "48143", // Münster
+    "76133", // Karlsruhe
+    "68159", // Mannheim
+    "86150", // Augsburg
+    "65183", // Wiesbaden
+    "24103", // Kiel
+    "39104", // Magdeburg
+    "79098", // Freiburg
+    "23552", // Lübeck
+    "99084", // Erfurt
+    "55116", // Mainz
+    "45879", // Gelsenkirchen
+    "38100", // Braunschweig
+    "09111", // Chemnitz
+    "66111", // Saarbrücken
+    "18055", // Rostock
+  ];
+
   const runTestlauf = async () => {
-    if (!/^\d{4,5}$/.test(plz.trim())) {
-      toast.error("Bitte eine gültige PLZ eingeben (4–5 Ziffern)");
-      return;
-    }
     setTestRunning(true);
     setTestCancel(false);
     cancelRef.current = false;
-    const target = 100;
+    const target = Math.max(10, testTarget);
     const startTs = Date.now();
+
+    // Reihenfolge Zielgruppen: aktuelle zuerst, dann Rest
     const order: DsbZielgruppe[] = [
       zielgruppe,
       ...DSB_ZIELGRUPPEN.filter((z) => z !== zielgruppe),
     ];
-    let currentRadius = radius;
+
+    // Reihenfolge PLZ: eingegebene zuerst (falls gültig), dann Städte-Liste
+    const userPlz = /^\d{4,5}$/.test(plz.trim()) ? plz.trim() : "";
+    const plzOrder: string[] = [
+      ...(userPlz ? [userPlz] : []),
+      ...DE_CITY_PLZ.filter((p) => p !== userPlz),
+    ];
+
     let iteration = 1;
-    let totalGroupsRun = 0;
-    let sourcesUsed = new Set<string>();
+    let totalRuns = 0;
+    const sourcesUsed = new Set<string>();
 
     const countLeads = async () => {
       const r = await fetchLeads({ data: { mode } });
@@ -301,74 +346,58 @@ export function MarketingPanel() {
     };
 
     let current = await countLeads();
-    setTestProgress({ current, target, zielgruppe: order[0], radius: currentRadius, iteration, source: "-" });
+    setTestProgress({ current, target, zielgruppe: order[0], radius, iteration, source: "-", plz: plzOrder[0] ?? "-" });
 
     try {
-      outer: while (current < target) {
-        let progressedThisRound = false;
-        for (const zg of order) {
+      outer: for (const currentPlz of plzOrder) {
+        if (cancelRef.current) break outer;
+        // Pro Stadt Radius von Start bis 50 km hochziehen
+        for (let currentRadius = radius; currentRadius <= 50; currentRadius = Math.min(50, currentRadius + 15)) {
           if (cancelRef.current) break outer;
-          for (const src of ["osm", "gmaps"] as const) {
+          let progressedThisRound = false;
+          for (const zg of order) {
             if (cancelRef.current) break outer;
-            setTestProgress({
-              current,
-              target,
-              zielgruppe: zg,
-              radius: currentRadius,
-              iteration,
-              source: src === "gmaps" ? "Google Maps" : "OpenStreetMap",
-            });
-            try {
-              const runner = src === "gmaps" ? runGmaps : runOsm;
-              const r = await runner({
-                data: { zielgruppe: zg, plz: plz.trim(), radiusKm: currentRadius, limit, mode },
-              });
-              if (r.ok) {
-                sourcesUsed.add(src);
-                if (r.inserted > 0) progressedThisRound = true;
-                setResults(r.preview);
-                setLastRun({
-                  places: r.places,
-                  found: r.found,
-                  inserted: r.inserted,
-                  skipped: r.skipped,
-                  cellsTotal: "cellsTotal" in r ? r.cellsTotal : undefined,
-                  cellsUsed: "cellsUsed" in r ? r.cellsUsed : undefined,
+            for (const src of ["osm", "gmaps"] as const) {
+              if (cancelRef.current) break outer;
+              setTestProgress({ current, target, zielgruppe: zg, radius: currentRadius, iteration, source: src === "gmaps" ? "Google Maps" : "OpenStreetMap", plz: currentPlz });
+              try {
+                const runner = src === "gmaps" ? runGmaps : runOsm;
+                const r = await runner({
+                  data: { zielgruppe: zg, plz: currentPlz, radiusKm: currentRadius, limit, mode },
                 });
+                if (r.ok) {
+                  sourcesUsed.add(src);
+                  if (r.inserted > 0) progressedThisRound = true;
+                  setResults(r.preview);
+                  setLastRun({
+                    places: r.places,
+                    found: r.found,
+                    inserted: r.inserted,
+                    skipped: r.skipped,
+                    cellsTotal: "cellsTotal" in r ? r.cellsTotal : undefined,
+                    cellsUsed: "cellsUsed" in r ? r.cellsUsed : undefined,
+                  });
+                }
+              } catch (e) {
+                console.warn("Testlauf-Fehler", currentPlz, zg, src, e);
               }
-            } catch (e) {
-              console.warn("Testlauf-Fehler", zg, src, e);
+              await new Promise((res) => setTimeout(res, 400));
+              current = await countLeads();
+              totalRuns++;
+              setTestProgress({ current, target, zielgruppe: zg, radius: currentRadius, iteration, source: src === "gmaps" ? "Google Maps" : "OpenStreetMap", plz: currentPlz });
+              if (current >= target) break outer;
             }
-            await new Promise((res) => setTimeout(res, 500));
-            current = await countLeads();
-            totalGroupsRun++;
-            setTestProgress({
-              current,
-              target,
-              zielgruppe: zg,
-              radius: currentRadius,
-              iteration,
-              source: src === "gmaps" ? "Google Maps" : "OpenStreetMap",
-            });
-            if (current >= target) break outer;
           }
-        }
-        if (!progressedThisRound) {
-          if (currentRadius >= 50) {
-            toast.warning(
-              `Testlauf gestoppt: max. Radius erreicht, ${current}/${target} Leads.`,
-            );
-            break;
-          }
-          currentRadius = Math.min(50, currentRadius + 10);
           iteration++;
-        } else {
-          iteration++;
+          // Wenn Radius bereits am Maximum, Stadt wechseln
+          if (currentRadius >= 50) break;
+          // Wenn in dieser Radius-Runde nichts Neues kam, sofort auf Maximum springen
+          if (!progressedThisRound) currentRadius = 50 - 15; // wird gleich auf 50 gesetzt
         }
       }
       const min = Math.round((Date.now() - startTs) / 60000);
       toast.success(
-        `Testlauf beendet: ${current} Leads · ${totalGroupsRun} Läufe · ${sourcesUsed.size} Quellen · ${min} min`,
+        `Testlauf beendet: ${current} Leads · ${totalRuns} Läufe · ${sourcesUsed.size} Quellen · ${min} min`,
       );
       await reloadLeads();
     } finally {
