@@ -10,8 +10,10 @@ import {
   listLeads,
   updateLead,
   deleteLead,
+  LAND_LABEL,
   type DbLead,
   type LeadStatusDb,
+  type LandCode,
 } from "@/lib/marketing.functions";
 import {
   scrapeGoogleMapsHealthcare,
@@ -35,6 +37,14 @@ import {
 } from "lucide-react";
 
 const OHNE_KATEGORIE = "Ohne Kategorie";
+const LAND_FLAG: Partial<Record<LandCode, string>> = {
+  DE: "🇩🇪",
+  PL: "🇵🇱",
+  UK: "🇬🇧",
+  FR: "🇫🇷",
+  IT: "🇮🇹",
+  ES: "🇪🇸",
+};
 
 // Microsoft Power Apps CRM Farbwelt (Fluent UI Purple)
 const CRM_PURPLE = "#742774";
@@ -203,6 +213,7 @@ export function MarketingPanel() {
   // Gespeicherte Marketing-Leads (alle Quellen: Kartenrecherche, Websuche, Import …)
   const [leads, setLeads] = useState<DbLead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
+  const [land, setLand] = useState<string>("alle");
   const [kategorie, setKategorie] = useState<string>("alle");
 
   const reloadLeads = async () => {
@@ -415,29 +426,48 @@ export function MarketingPanel() {
     [results, onlyWithEmail],
   );
 
-  // Kategorien = Fachgebiet/Zielgruppe je Lead (z. B. "Zahnärzte", "Medizinrecht", "Orthopädie" …)
+  // Länder = oberste Gliederungsebene (z. B. Deutschland, Polen …)
+  const laender = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of leads) counts.set(l.land, (counts.get(l.land) ?? 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [leads]);
+
+  const leadsForLand = useMemo(() => {
+    if (land === "alle") return leads;
+    return leads.filter((l) => l.land === land);
+  }, [leads, land]);
+
+  // Kategorien = Fachgebiet/Zielgruppe je Lead (z. B. "Zahnärzte", "Medizinrecht", "Orthopädie" …),
+  // innerhalb des aktuell gewählten Landes.
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const l of leads) {
+    for (const l of leadsForLand) {
       const key = (l.fachgebiet ?? "").trim() || OHNE_KATEGORIE;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [leads]);
+  }, [leadsForLand]);
 
   const displayedLeads = useMemo(() => {
-    if (kategorie === "alle") return leads;
-    return leads.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === kategorie);
-  }, [leads, kategorie]);
+    if (kategorie === "alle") return leadsForLand;
+    return leadsForLand.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === kategorie);
+  }, [leadsForLand, kategorie]);
 
   // Bei "Alle" strukturiert nach Kategorie gruppieren, statt einer langen flachen Liste.
   const groupedLeads = useMemo(() => {
     if (kategorie !== "alle") return null;
     return categories.map(([name]) => [
       name,
-      leads.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === name),
+      leadsForLand.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === name),
     ] as [string, DbLead[]]);
-  }, [categories, leads, kategorie]);
+  }, [categories, leadsForLand, kategorie]);
+
+  useEffect(() => {
+    if (land !== "alle" && !laender.some(([code]) => code === land)) {
+      setLand("alle");
+    }
+  }, [laender, land]);
 
   useEffect(() => {
     if (kategorie !== "alle" && !categories.some(([name]) => name === kategorie)) {
@@ -446,13 +476,13 @@ export function MarketingPanel() {
   }, [categories, kategorie]);
 
   const exportKategorieCSV = () => {
-    const headers = ["Name", "Kategorie", "Stadt", "Telefon", "E-Mail", "Website", "Status"];
+    const headers = ["Name", "Land", "Kategorie", "Stadt", "Telefon", "E-Mail", "Website", "Status"];
     const escape = (v: unknown) => {
       const s = v == null ? "" : String(v);
       return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const rows = displayedLeads.map((l) =>
-      [l.name ?? "", l.fachgebiet ?? OHNE_KATEGORIE, l.stadt ?? "", l.telefon ?? "", l.email, l.website ?? "", STATUS_LABEL[l.status]]
+      [l.name ?? "", LAND_LABEL[l.land] ?? l.land, l.fachgebiet ?? OHNE_KATEGORIE, l.stadt ?? "", l.telefon ?? "", l.email, l.website ?? "", STATUS_LABEL[l.status]]
         .map(escape)
         .join(";"),
     );
@@ -461,8 +491,9 @@ export function MarketingPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const label = kategorie === "alle" ? "alle" : kategorie;
-    a.download = `marketingliste_${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const landLabel = land === "alle" ? "alle-laender" : (LAND_LABEL[land as LandCode] ?? land);
+    const katLabel = kategorie === "alle" ? "alle" : kategorie;
+    a.download = `marketingliste_${landLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${katLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -702,6 +733,32 @@ export function MarketingPanel() {
           </Button>
         </div>
 
+        {laender.length > 1 && (
+          <div className="px-4 py-2 border-b flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setLand("alle")}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                land === "alle" ? "text-white" : "bg-muted hover:bg-muted/80"
+              }`}
+              style={land === "alle" ? { backgroundColor: "#1c3a52" } : undefined}
+            >
+              Alle Länder · {leads.length}
+            </button>
+            {laender.map(([code, count]) => (
+              <button
+                key={code}
+                onClick={() => setLand(code)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  land === code ? "text-white" : "bg-muted hover:bg-muted/80"
+                }`}
+                style={land === code ? { backgroundColor: "#1c3a52" } : undefined}
+              >
+                {LAND_FLAG[code as LandCode] ?? ""} {LAND_LABEL[code as LandCode] ?? code} · {count}
+              </button>
+            ))}
+          </div>
+        )}
+
         {categories.length > 0 && (
           <div className="px-4 py-2 border-b flex flex-wrap gap-1.5">
             <button
@@ -711,7 +768,7 @@ export function MarketingPanel() {
               }`}
               style={kategorie === "alle" ? { backgroundColor: CRM_PURPLE } : undefined}
             >
-              Alle · {leads.length}
+              Alle Fachrichtungen · {leadsForLand.length}
             </button>
             {categories.map(([name, count]) => (
               <button
