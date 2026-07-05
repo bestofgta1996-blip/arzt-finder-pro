@@ -67,11 +67,21 @@ const DIRECTORY_PRESETS: Record<"DE" | "PL" | "INT", DirectoryPreset[]> = {
     },
     {
       label: "DE · Termin- & Bewertungsportale",
-      note: "jameda / Doctolib / Docplanner",
+      note: "jameda / Doctolib / Docplanner / docinsider / sanego",
       urls: [
         "https://www.jameda.de/",
         "https://www.doctolib.de/",
         "https://www.doctolib.de/fachaerzte",
+        "https://www.docinsider.de/",
+        "https://www.sanego.de/",
+      ],
+    },
+    {
+      label: "DE · Qualitäts- & Klinikportale",
+      note: "Weiße Liste (Bertelsmann Stiftung) / Arzt.de",
+      urls: [
+        "https://www.weisse-liste.de/",
+        "https://www.arzt.de/",
       ],
     },
     {
@@ -81,6 +91,14 @@ const DIRECTORY_PRESETS: Record<"DE" | "PL" | "INT", DirectoryPreset[]> = {
         "https://www.justiz.de/onlinedienste/sachverstaendige/",
         "https://svv.ihk.de/",
         "https://www.bdsf.de/sachverstaendige",
+      ],
+    },
+    {
+      label: "DE · Anwaltssuche (Medizinrecht)",
+      note: "Offizielle DAV-Anwaltauskunft / anwalt.de",
+      urls: [
+        "https://anwaltauskunft.de/",
+        "https://www.anwalt.de/",
       ],
     },
     {
@@ -96,10 +114,11 @@ const DIRECTORY_PRESETS: Record<"DE" | "PL" | "INT", DirectoryPreset[]> = {
   PL: [
     {
       label: "PL · Oficjalne rejestry",
-      note: "NIL / NFZ",
+      note: "NIL / NFZ / Rejestr Podmiotów Leczniczych",
       urls: [
         "https://nil.org.pl/rejestry/centralny-rejestr-lekarzy",
         "https://gsl.nfz.gov.pl/GSL/",
+        "https://rpwdl.ezdrowie.gov.pl/",
       ],
     },
     {
@@ -173,6 +192,7 @@ export function SearchPanel({ onAddLeads }: Props) {
   const [directoryUrls, setDirectoryUrls] = useState("");
   const [directoryHits, setDirectoryHits] = useState<DirectoryEmailHit[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [scanAllProgress, setScanAllProgress] = useState<{ done: number; total: number } | null>(null);
 
   const toggleZg = (zg: Zielgruppe) => {
     setZielgruppen((prev) => {
@@ -278,6 +298,51 @@ export function SearchPanel({ onAddLeads }: Props) {
       setError(e instanceof Error ? e.message : "Unbekannter Fehler");
     } finally {
       setDirectoryLoading(false);
+    }
+  };
+
+  const handleScanAllDirectories = async () => {
+    const presetGroup = land === "PL" ? "PL" : land === "DE" ? "DE" : "INT";
+    const allUrls = Array.from(
+      new Set(DIRECTORY_PRESETS[presetGroup].flatMap((preset) => preset.urls)),
+    );
+    if (allUrls.length === 0) return;
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < allUrls.length; i += 8) chunks.push(allUrls.slice(i, i + 8));
+
+    setDirectoryLoading(true);
+    setError(null);
+    setDirectoryHits([]);
+    setScanAllProgress({ done: 0, total: chunks.length });
+    try {
+      const activeLand = land === "Andere" ? "DE" : land;
+      const byEmail = new Map<string, DirectoryEmailHit>();
+      for (const [i, chunk] of chunks.entries()) {
+        try {
+          const res = await runDirectoryScan({
+            data: {
+              urls: chunk,
+              land: activeLand,
+              suchbegriff: [fachgebiet, ort].filter(Boolean).join(" "),
+              maxPagesPerDirectory: 25,
+            },
+          });
+          if (res.ok) {
+            for (const hit of res.emails) if (!byEmail.has(hit.email)) byEmail.set(hit.email, hit);
+            setDirectoryHits(Array.from(byEmail.values()));
+          }
+        } catch {
+          /* einzelnes Verzeichnis überspringen, restliche weiterlaufen lassen */
+        }
+        setScanAllProgress({ done: i + 1, total: chunks.length });
+      }
+      const total = byEmail.size;
+      if (total === 0) toast.info("Keine E-Mails in den Verzeichnissen gefunden");
+      else toast.success(`${total} E-Mail(s) aus ${allUrls.length} Verzeichnissen gefunden`);
+    } finally {
+      setDirectoryLoading(false);
+      setScanAllProgress(null);
     }
   };
 
@@ -476,11 +541,28 @@ export function SearchPanel({ onAddLeads }: Props) {
           </div>
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <p className="text-xs text-muted-foreground">Maximal 8 Verzeichnisse pro Lauf · bis zu 25 Unterseiten je Verzeichnis.</p>
-            <Button type="button" variant="secondary" onClick={handleDirectoryScan} disabled={directoryLoading || loading}>
-              {directoryLoading ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
-              E-Mails aus Verzeichnissen holen
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleScanAllDirectories}
+                disabled={directoryLoading || loading || (land !== "DE" && land !== "PL")}
+                title={land !== "DE" && land !== "PL" ? "Nur für DE/PL hinterlegt" : undefined}
+              >
+                {directoryLoading && scanAllProgress ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+                Alle {land === "PL" ? "PL" : "DE"}-Verzeichnisse automatisch durchsuchen
+              </Button>
+              <Button type="button" variant="secondary" onClick={handleDirectoryScan} disabled={directoryLoading || loading}>
+                {directoryLoading && !scanAllProgress ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+                E-Mails aus Verzeichnissen holen
+              </Button>
+            </div>
           </div>
+          {scanAllProgress && (
+            <div className="rounded border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Durchsuche Verzeichnisse … {scanAllProgress.done} / {scanAllProgress.total}
+            </div>
+          )}
         </CardContent>
       </Card>
 
