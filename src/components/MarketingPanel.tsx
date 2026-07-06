@@ -109,11 +109,13 @@ function LeadCard({
   showCategory,
   onStatusChange,
   onDelete,
+  onCompose,
 }: {
   lead: DbLead;
   showCategory: boolean;
   onStatusChange: (status: LeadStatusDb) => void;
   onDelete: () => void;
+  onCompose: () => void;
 }) {
   return (
     <div className="rounded-lg border bg-background p-3 space-y-2">
@@ -154,16 +156,21 @@ function LeadCard({
           </a>
         )}
       </div>
-      <Select value={lead.status} onValueChange={(v) => onStatusChange(v as LeadStatusDb)}>
-        <SelectTrigger className="h-7 text-xs w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {(Object.keys(STATUS_LABEL) as LeadStatusDb[]).map((s) => (
-            <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={onCompose}>
+          <Send className="size-3.5 mr-1" /> Gmail
+        </Button>
+        <Select value={lead.status} onValueChange={(v) => onStatusChange(v as LeadStatusDb)}>
+          <SelectTrigger className="h-7 text-xs flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(STATUS_LABEL) as LeadStatusDb[]).map((s) => (
+              <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }
