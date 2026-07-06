@@ -819,6 +819,7 @@ export function MarketingPanel() {
                         showCategory={false}
                         onStatusChange={(status) => setStatus(l.id, status)}
                         onDelete={() => removeLead(l.id)}
+                        onCompose={() => setComposeLead(l)}
                       />
                     ))}
                   </div>
@@ -834,6 +835,7 @@ export function MarketingPanel() {
                   showCategory
                   onStatusChange={(status) => setStatus(l.id, status)}
                   onDelete={() => removeLead(l.id)}
+                  onCompose={() => setComposeLead(l)}
                 />
               ))}
             </div>
