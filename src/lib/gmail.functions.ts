@@ -651,6 +651,126 @@ export const createGmailDraft = createServerFn({ method: "POST" })
     },
   );
 
+// ---- Send (direct) ------------------------------------------------
+
+const SendInput = z.object({
+  leadId: z.string().uuid(),
+  templateId: z.string().uuid().optional().nullable(),
+  subject: z.string().min(1).max(300).optional(),
+  bodyText: z.string().min(1).max(20000).optional(),
+  applyLabel: z.boolean().optional().default(true),
+});
+
+export const sendGmailEmail = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => SendInput.parse(d))
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      ok: boolean;
+      messageId?: string;
+      threadId?: string;
+      subject?: string;
+      reason?: string;
+    }> => {
+      const headers = gmailHeaders();
+      if (!headers) return { ok: false, reason: "Gmail ist noch nicht verbunden." };
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+      const { data: lead, error: leadErr } = await supabaseAdmin
+        .from("leads")
+        .select("id,email,name,stadt,fachgebiet,zielgruppe,land,status")
+        .eq("id", data.leadId)
+        .maybeSingle();
+      if (leadErr || !lead) return { ok: false, reason: "Lead nicht gefunden." };
+
+      let subject = data.subject?.trim();
+      let bodyText = data.bodyText;
+      if (!subject || !bodyText) {
+        let tplQuery = supabaseAdmin
+          .from("email_templates")
+          .select("betreff,body_text")
+          .limit(1);
+        if (data.templateId) {
+          tplQuery = tplQuery.eq("id", data.templateId);
+        } else {
+          tplQuery = tplQuery
+            .eq("zielgruppe", (lead as { zielgruppe: string | null }).zielgruppe ?? "")
+            .eq("is_default", true);
+        }
+        const { data: tpl } = await tplQuery.maybeSingle();
+        if (!tpl) {
+          return {
+            ok: false,
+            reason: "Keine passende Vorlage. Bitte zuerst Anschreiben-Vorlage anlegen.",
+          };
+        }
+        subject = subject || (tpl as { betreff: string }).betreff;
+        bodyText = bodyText || (tpl as { body_text: string }).body_text;
+      }
+
+      const vars = {
+        name: (lead as { name: string | null }).name,
+        stadt: (lead as { stadt: string | null }).stadt,
+        fachgebiet: (lead as { fachgebiet: string | null }).fachgebiet,
+      };
+      const finalSubject = applyPlaceholders(subject!, vars);
+      const finalBody = applyPlaceholders(bodyText!, vars);
+
+      const raw = buildRfc2822({
+        to: (lead as { email: string }).email,
+        subject: finalSubject,
+        body: finalBody,
+      });
+
+      const res = await fetch(`${GATEWAY}/users/me/messages/send`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ raw: base64url(raw) }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return {
+          ok: false,
+          reason: `Gmail-Versand fehlgeschlagen (${res.status})${text ? `: ${text.slice(0, 200)}` : ""}`,
+        };
+      }
+      const j = (await res.json()) as { id?: string; threadId?: string };
+      const now = new Date().toISOString();
+
+      // Label anfügen (best effort)
+      let labelId: string | null = null;
+      if (data.applyLabel && j.id && (lead as { fachgebiet: string | null }).fachgebiet) {
+        const { data: labelRow } = await supabaseAdmin
+          .from("gmail_labels")
+          .select("label_id")
+          .eq("land", (lead as { land: string }).land)
+          .eq("fachgebiet", (lead as { fachgebiet: string }).fachgebiet)
+          .maybeSingle();
+        if (labelRow?.label_id) {
+          labelId = labelRow.label_id as string;
+          await addLabelToMessage(j.id, labelId, headers);
+        }
+      }
+
+      const currentStatus = (lead as { status: LeadStatusDb }).status;
+      const patch: Record<string, unknown> = {
+        last_contacted_at: now,
+        gmail_message_id: j.id ?? null,
+        gmail_thread_id: j.threadId ?? null,
+      };
+      if (labelId) patch.gmail_label_id = labelId;
+      await updateLeadStatus(supabaseAdmin, data.leadId, currentStatus, "angeschrieben", patch);
+
+      return {
+        ok: true,
+        messageId: j.id,
+        threadId: j.threadId,
+        subject: finalSubject,
+      };
+    },
+  );
+
 // ---- Templates ----------------------------------------------------
 
 export interface DbEmailTemplate {
