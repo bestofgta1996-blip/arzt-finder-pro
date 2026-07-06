@@ -34,7 +34,9 @@ import {
   Search,
   MapPin,
   Download,
+  Send,
 } from "lucide-react";
+import { MailComposeDialog } from "@/components/MailComposeDialog";
 
 const OHNE_KATEGORIE = "Ohne Kategorie";
 const LAND_FLAG: Partial<Record<LandCode, string>> = {
