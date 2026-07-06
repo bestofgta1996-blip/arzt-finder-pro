@@ -441,6 +441,22 @@ export function MarketingPanel() {
     }
   };
 
+  useEffect(() => { runTestlaufRef.current = runTestlauf; });
+
+  // Auto-Suche Intervall: startet regelmäßig einen Testlauf, wenn keiner läuft.
+  useEffect(() => {
+    if (!autoOn || mode !== "dsb") return;
+    // Direkt beim Aktivieren einmal starten (falls nicht bereits läuft)
+    const kick = () => {
+      if (!testRunningRef.current) void runTestlaufRef.current();
+    };
+    const t = window.setTimeout(kick, 1500);
+    const iv = window.setInterval(kick, Math.max(1, autoMinutes) * 60_000);
+    return () => { window.clearTimeout(t); window.clearInterval(iv); };
+  }, [autoOn, autoMinutes, mode]);
+
+
+
   const displayedResults = useMemo(
     () => (onlyWithEmail ? results.filter((r) => !!r.email) : results),
     [results, onlyWithEmail],
