@@ -208,6 +208,22 @@ export function MarketingPanel() {
     plz: string;
   } | null>(null);
 
+  // Auto-Suche: läuft alle X Minuten von selbst weiter
+  const AUTO_STORAGE = "marketing_autosuche";
+  const AUTO_MIN_STORAGE = "marketing_autosuche_min";
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoMinutes, setAutoMinutes] = useState(5);
+  const testRunningRef = useRef(false);
+  const runTestlaufRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => { testRunningRef.current = testRunning; }, [testRunning]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const on = window.localStorage.getItem(AUTO_STORAGE) === "1";
+    const m = Number(window.localStorage.getItem(AUTO_MIN_STORAGE) ?? "5") || 5;
+    setAutoOn(on);
+    setAutoMinutes(Math.max(1, Math.min(120, m)));
+  }, []);
+
   // Suchergebnisse (aktueller Lauf)
   const [results, setResults] = useState<PreviewRow[]>([]);
   const [lastRun, setLastRun] = useState<{
