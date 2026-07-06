@@ -843,6 +843,13 @@ export function MarketingPanel() {
           )}
         </div>
       </div>
+
+      <MailComposeDialog
+        lead={composeLead}
+        open={!!composeLead}
+        onOpenChange={(o) => { if (!o) setComposeLead(null); }}
+        onSent={() => void reloadLeads()}
+      />
     </div>
   );
 }
