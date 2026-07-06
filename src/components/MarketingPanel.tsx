@@ -223,7 +223,6 @@ export function MarketingPanel() {
   const [leads, setLeads] = useState<DbLead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [land, setLand] = useState<string>("alle");
-  const [land, setLand] = useState<string>("alle");
   const [kategorie, setKategorie] = useState<string>("alle");
   const [composeLead, setComposeLead] = useState<DbLead | null>(null);
 
