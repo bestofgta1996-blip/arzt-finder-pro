@@ -666,6 +666,35 @@ export function MarketingPanel() {
                   disabled={testRunning}
                 />
               </div>
+              <div>
+                <Label className="text-xs">Auto-Suche alle (Min.)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={autoMinutes}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(120, Number(e.target.value) || 5));
+                    setAutoMinutes(v);
+                    if (typeof window !== "undefined") window.localStorage.setItem(AUTO_MIN_STORAGE, String(v));
+                  }}
+                  className="w-24 h-9"
+                />
+              </div>
+              <label className="inline-flex items-center gap-2 h-9 px-3 rounded border cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={autoOn}
+                  onChange={(e) => {
+                    setAutoOn(e.target.checked);
+                    if (typeof window !== "undefined")
+                      window.localStorage.setItem(AUTO_STORAGE, e.target.checked ? "1" : "0");
+                  }}
+                />
+                <span className="text-xs font-medium">
+                  Auto-Suche {autoOn ? "aktiv" : "aus"}
+                </span>
+              </label>
               <p className="text-xs text-muted-foreground flex-1 min-w-[200px]">
                 Durchsucht alle Zielgruppen über {DE_CITY_PLZ.length}+ deutsche Städte
                 (PLZ optional – eingegebene PLZ wird zuerst genutzt), bis das Ziel erreicht ist.
