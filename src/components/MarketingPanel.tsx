@@ -208,6 +208,22 @@ export function MarketingPanel() {
     plz: string;
   } | null>(null);
 
+  // Auto-Suche: läuft alle X Minuten von selbst weiter
+  const AUTO_STORAGE = "marketing_autosuche";
+  const AUTO_MIN_STORAGE = "marketing_autosuche_min";
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoMinutes, setAutoMinutes] = useState(5);
+  const testRunningRef = useRef(false);
+  const runTestlaufRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => { testRunningRef.current = testRunning; }, [testRunning]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const on = window.localStorage.getItem(AUTO_STORAGE) === "1";
+    const m = Number(window.localStorage.getItem(AUTO_MIN_STORAGE) ?? "5") || 5;
+    setAutoOn(on);
+    setAutoMinutes(Math.max(1, Math.min(120, m)));
+  }, []);
+
   // Suchergebnisse (aktueller Lauf)
   const [results, setResults] = useState<PreviewRow[]>([]);
   const [lastRun, setLastRun] = useState<{
@@ -425,6 +441,22 @@ export function MarketingPanel() {
     }
   };
 
+  useEffect(() => { runTestlaufRef.current = runTestlauf; });
+
+  // Auto-Suche Intervall: startet regelmäßig einen Testlauf, wenn keiner läuft.
+  useEffect(() => {
+    if (!autoOn || mode !== "dsb") return;
+    // Direkt beim Aktivieren einmal starten (falls nicht bereits läuft)
+    const kick = () => {
+      if (!testRunningRef.current) void runTestlaufRef.current();
+    };
+    const t = window.setTimeout(kick, 1500);
+    const iv = window.setInterval(kick, Math.max(1, autoMinutes) * 60_000);
+    return () => { window.clearTimeout(t); window.clearInterval(iv); };
+  }, [autoOn, autoMinutes, mode]);
+
+
+
   const displayedResults = useMemo(
     () => (onlyWithEmail ? results.filter((r) => !!r.email) : results),
     [results, onlyWithEmail],
@@ -634,6 +666,35 @@ export function MarketingPanel() {
                   disabled={testRunning}
                 />
               </div>
+              <div>
+                <Label className="text-xs">Auto-Suche alle (Min.)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={autoMinutes}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(120, Number(e.target.value) || 5));
+                    setAutoMinutes(v);
+                    if (typeof window !== "undefined") window.localStorage.setItem(AUTO_MIN_STORAGE, String(v));
+                  }}
+                  className="w-24 h-9"
+                />
+              </div>
+              <label className="inline-flex items-center gap-2 h-9 px-3 rounded border cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={autoOn}
+                  onChange={(e) => {
+                    setAutoOn(e.target.checked);
+                    if (typeof window !== "undefined")
+                      window.localStorage.setItem(AUTO_STORAGE, e.target.checked ? "1" : "0");
+                  }}
+                />
+                <span className="text-xs font-medium">
+                  Auto-Suche {autoOn ? "aktiv" : "aus"}
+                </span>
+              </label>
               <p className="text-xs text-muted-foreground flex-1 min-w-[200px]">
                 Durchsucht alle Zielgruppen über {DE_CITY_PLZ.length}+ deutsche Städte
                 (PLZ optional – eingegebene PLZ wird zuerst genutzt), bis das Ziel erreicht ist.
