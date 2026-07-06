@@ -292,45 +292,21 @@ export function MarketingPanel() {
     }
   };
 
-  // Große deutsche Städte + einige mittlere – deckt bewusst weite Regionen ab,
-  // damit der Testlauf nicht auf einer einzigen PLZ hängen bleibt.
+  // Repräsentative PLZ für alle 99 deutschen Leitregionen (01-99).
+  // Jede Region wird mit ~50 km Radius abgedeckt → gemeinsam ganz DE.
   const DE_CITY_PLZ: string[] = [
-    "10115", // Berlin
-    "20095", // Hamburg
-    "80331", // München
-    "50667", // Köln
-    "60311", // Frankfurt a. M.
-    "70173", // Stuttgart
-    "40213", // Düsseldorf
-    "44135", // Dortmund
-    "45127", // Essen
-    "04109", // Leipzig
-    "28195", // Bremen
-    "01067", // Dresden
-    "30159", // Hannover
-    "90402", // Nürnberg
-    "47051", // Duisburg
-    "44787", // Bochum
-    "42103", // Wuppertal
-    "33602", // Bielefeld
-    "53111", // Bonn
-    "48143", // Münster
-    "76133", // Karlsruhe
-    "68159", // Mannheim
-    "86150", // Augsburg
-    "65183", // Wiesbaden
-    "24103", // Kiel
-    "39104", // Magdeburg
-    "79098", // Freiburg
-    "23552", // Lübeck
-    "99084", // Erfurt
-    "55116", // Mainz
-    "45879", // Gelsenkirchen
-    "38100", // Braunschweig
-    "09111", // Chemnitz
-    "66111", // Saarbrücken
-    "18055", // Rostock
+    "01067","02625","03046","04109","06108","07545","08056","09111",
+    "10115","12043","13353","14467","15230","16225","17033","18055","19053",
+    "20095","21073","22041","23552","24103","25335","26122","27568","28195","29221",
+    "30159","31134","32423","33602","34117","35390","36037","37073","38100","39104",
+    "40213","41061","42103","44135","45127","46045","47051","48143","49074",
+    "50667","51373","52062","53111","54290","55116","56068","57072","58089","59065",
+    "60311","61118","63065","64283","65183","66111","67059","68159","69115",
+    "70173","71032","72070","73033","74072","75172","76133","77652","78462","79098",
+    "80331","81667","82256","83022","84028","85049","86150","87435","88045","89073",
+    "90402","91054","92224","93047","94032","95028","96047","97070","98527","99084",
   ];
+  const DE_PLZ_STORAGE = "marketing_testlauf_plz_index";
 
   const runTestlauf = async () => {
     setTestRunning(true);
@@ -345,12 +321,21 @@ export function MarketingPanel() {
       ...DSB_ZIELGRUPPEN.filter((z) => z !== zielgruppe),
     ];
 
-    // Reihenfolge PLZ: eingegebene zuerst (falls gültig), dann Städte-Liste
+    // PLZ-Reihenfolge: eingegebene PLZ (falls gültig) zuerst, danach fortlaufend
+    // ab der zuletzt bearbeiteten Position durch die komplette DE-Liste.
     const userPlz = /^\d{4,5}$/.test(plz.trim()) ? plz.trim() : "";
+    const storedIdxRaw =
+      typeof window !== "undefined" ? window.localStorage.getItem(DE_PLZ_STORAGE) : null;
+    const startIdx = Math.max(
+      0,
+      Math.min(DE_CITY_PLZ.length - 1, Number(storedIdxRaw ?? 0) || 0),
+    );
+    const rotated = [...DE_CITY_PLZ.slice(startIdx), ...DE_CITY_PLZ.slice(0, startIdx)];
     const plzOrder: string[] = [
       ...(userPlz ? [userPlz] : []),
-      ...DE_CITY_PLZ.filter((p) => p !== userPlz),
+      ...rotated.filter((p) => p !== userPlz),
     ];
+
 
     let iteration = 1;
     let totalRuns = 0;
