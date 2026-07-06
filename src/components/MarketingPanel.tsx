@@ -403,6 +403,15 @@ export function MarketingPanel() {
           // Wenn in dieser Radius-Runde nichts Neues kam, sofort auf Maximum springen
           if (!progressedThisRound) currentRadius = 50 - 15; // wird gleich auf 50 gesetzt
         }
+        // PLZ vollständig abgearbeitet → Fortschritt persistieren,
+        // damit der nächste Start bei der nächsten Leitregion weitermacht.
+        if (!userPlz || currentPlz !== userPlz) {
+          const idx = DE_CITY_PLZ.indexOf(currentPlz);
+          if (idx >= 0 && typeof window !== "undefined") {
+            const next = (idx + 1) % DE_CITY_PLZ.length;
+            window.localStorage.setItem(DE_PLZ_STORAGE, String(next));
+          }
+        }
       }
       const min = Math.round((Date.now() - startTs) / 60000);
       toast.success(
