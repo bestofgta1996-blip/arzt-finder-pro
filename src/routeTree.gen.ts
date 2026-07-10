@@ -14,6 +14,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GuideLegalMedicalOutreachRouteImport } from './routes/guide.legal-medical-outreach'
 import { Route as ApiPublicHooksTendersTickRouteImport } from './routes/api/public/hooks/tenders-tick'
 import { Route as ApiPublicHooksSearchTickRouteImport } from './routes/api/public/hooks/search-tick'
+import { Route as ApiPublicHooksGmapsTickRouteImport } from './routes/api/public/hooks/gmaps-tick'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -43,11 +44,17 @@ const ApiPublicHooksSearchTickRoute =
     path: '/api/public/hooks/search-tick',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksGmapsTickRoute = ApiPublicHooksGmapsTickRouteImport.update({
+  id: '/api/public/hooks/gmaps-tick',
+  path: '/api/public/hooks/gmaps-tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/guide/legal-medical-outreach': typeof GuideLegalMedicalOutreachRoute
+  '/api/public/hooks/gmaps-tick': typeof ApiPublicHooksGmapsTickRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
@@ -55,6 +62,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/guide/legal-medical-outreach': typeof GuideLegalMedicalOutreachRoute
+  '/api/public/hooks/gmaps-tick': typeof ApiPublicHooksGmapsTickRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
@@ -63,6 +71,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/guide/legal-medical-outreach': typeof GuideLegalMedicalOutreachRoute
+  '/api/public/hooks/gmaps-tick': typeof ApiPublicHooksGmapsTickRoute
   '/api/public/hooks/search-tick': typeof ApiPublicHooksSearchTickRoute
   '/api/public/hooks/tenders-tick': typeof ApiPublicHooksTendersTickRoute
 }
@@ -72,6 +81,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sitemap.xml'
     | '/guide/legal-medical-outreach'
+    | '/api/public/hooks/gmaps-tick'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   fileRoutesByTo: FileRoutesByTo
@@ -79,6 +89,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sitemap.xml'
     | '/guide/legal-medical-outreach'
+    | '/api/public/hooks/gmaps-tick'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   id:
@@ -86,6 +97,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sitemap.xml'
     | '/guide/legal-medical-outreach'
+    | '/api/public/hooks/gmaps-tick'
     | '/api/public/hooks/search-tick'
     | '/api/public/hooks/tenders-tick'
   fileRoutesById: FileRoutesById
@@ -94,6 +106,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   GuideLegalMedicalOutreachRoute: typeof GuideLegalMedicalOutreachRoute
+  ApiPublicHooksGmapsTickRoute: typeof ApiPublicHooksGmapsTickRoute
   ApiPublicHooksSearchTickRoute: typeof ApiPublicHooksSearchTickRoute
   ApiPublicHooksTendersTickRoute: typeof ApiPublicHooksTendersTickRoute
 }
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSearchTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/gmaps-tick': {
+      id: '/api/public/hooks/gmaps-tick'
+      path: '/api/public/hooks/gmaps-tick'
+      fullPath: '/api/public/hooks/gmaps-tick'
+      preLoaderRoute: typeof ApiPublicHooksGmapsTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -142,9 +162,20 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   GuideLegalMedicalOutreachRoute: GuideLegalMedicalOutreachRoute,
+  ApiPublicHooksGmapsTickRoute: ApiPublicHooksGmapsTickRoute,
   ApiPublicHooksSearchTickRoute: ApiPublicHooksSearchTickRoute,
   ApiPublicHooksTendersTickRoute: ApiPublicHooksTendersTickRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

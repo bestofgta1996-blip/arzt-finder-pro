@@ -1,0 +1,26 @@
+name: Scheduled search ticks
+
+# Ruft die "public hook" Cron-Endpunkte der App stündlich auf, damit Leads
+# und Ausschreibungen auch ohne offenen Browser-Tab automatisch weiter
+# gesammelt werden. Ziel-URL über Repo-Variable APP_URL überschreibbar
+# (Settings -> Secrets and variables -> Actions -> Variables), falls die
+# App auf eine andere Domain umzieht.
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ticks:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: ${{ vars.APP_URL || 'https://arzt-finder-pro.lovable.app' }}
+    steps:
+      - name: Kartenrecherche-Tick (Google Maps/OSM, rotiert Zielgruppe x PLZ)
+        run: curl -sS -X POST "$APP_URL/api/public/hooks/gmaps-tick" --max-time 120 || true
+
+      - name: Websuche-Tick (Firecrawl, search_jobs)
+        run: curl -sS -X POST "$APP_URL/api/public/hooks/search-tick" --max-time 120 || true
+
+      - name: Ausschreibungen-Tick
+        run: curl -sS -X POST "$APP_URL/api/public/hooks/tenders-tick" --max-time 120 || true
