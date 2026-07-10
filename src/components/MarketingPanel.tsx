@@ -39,6 +39,63 @@ import {
 import { MailComposeDialog } from "@/components/MailComposeDialog";
 
 const OHNE_KATEGORIE = "Ohne Kategorie";
+const OHNE_ORT = "Ohne Ort";
+
+// Repräsentative PLZ für alle 53 Kreise/kreisfreien Städte in NRW – Radius-Suche
+// deckt danach das jeweilige Kreisgebiet mit ab. Zum gezielten Abklappern von
+// "ganz NRW" Stadt für Stadt statt der PLZ freihändig einzutippen.
+const NRW_STAEDTE: { name: string; plz: string }[] = [
+  { name: "Aachen", plz: "52062" },
+  { name: "Bielefeld", plz: "33602" },
+  { name: "Bochum", plz: "44787" },
+  { name: "Bonn", plz: "53111" },
+  { name: "Bottrop", plz: "46236" },
+  { name: "Dortmund", plz: "44135" },
+  { name: "Duisburg", plz: "47051" },
+  { name: "Düsseldorf", plz: "40213" },
+  { name: "Essen", plz: "45127" },
+  { name: "Gelsenkirchen", plz: "45879" },
+  { name: "Hagen", plz: "58095" },
+  { name: "Hamm", plz: "59065" },
+  { name: "Herne", plz: "44623" },
+  { name: "Köln", plz: "50667" },
+  { name: "Krefeld", plz: "47798" },
+  { name: "Leverkusen", plz: "51373" },
+  { name: "Mönchengladbach", plz: "41061" },
+  { name: "Mülheim an der Ruhr", plz: "45468" },
+  { name: "Münster", plz: "48143" },
+  { name: "Oberhausen", plz: "46045" },
+  { name: "Remscheid", plz: "42853" },
+  { name: "Solingen", plz: "42651" },
+  { name: "Wuppertal", plz: "42103" },
+  { name: "Bocholt (Kreis Borken)", plz: "46395" },
+  { name: "Coesfeld", plz: "48653" },
+  { name: "Schwelm (Ennepe-Ruhr)", plz: "58332" },
+  { name: "Euskirchen", plz: "53879" },
+  { name: "Gütersloh", plz: "33330" },
+  { name: "Heinsberg", plz: "52525" },
+  { name: "Meschede (Hochsauerland)", plz: "59872" },
+  { name: "Kleve", plz: "47533" },
+  { name: "Detmold (Lippe)", plz: "32756" },
+  { name: "Lüdenscheid (Märkischer Kreis)", plz: "58507" },
+  { name: "Mettmann", plz: "40822" },
+  { name: "Minden", plz: "32423" },
+  { name: "Gummersbach (Oberberg)", plz: "51643" },
+  { name: "Olpe", plz: "57462" },
+  { name: "Paderborn", plz: "33098" },
+  { name: "Recklinghausen", plz: "45657" },
+  { name: "Bergheim (Rhein-Erft)", plz: "50126" },
+  { name: "Neuss", plz: "41460" },
+  { name: "Bergisch Gladbach", plz: "51465" },
+  { name: "Siegburg (Rhein-Sieg)", plz: "53721" },
+  { name: "Siegen", plz: "57072" },
+  { name: "Soest", plz: "59494" },
+  { name: "Steinfurt", plz: "48565" },
+  { name: "Unna", plz: "59423" },
+  { name: "Viersen", plz: "41747" },
+  { name: "Warendorf", plz: "48231" },
+  { name: "Wesel", plz: "46483" },
+];
 const LAND_FLAG: Partial<Record<LandCode, string>> = {
   DE: "🇩🇪",
   PL: "🇵🇱",
@@ -239,7 +296,9 @@ export function MarketingPanel() {
   const [leads, setLeads] = useState<DbLead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [land, setLand] = useState<string>("alle");
+  const [ort, setOrt] = useState<string>("alle");
   const [kategorie, setKategorie] = useState<string>("alle");
+  const [nrwOpen, setNrwOpen] = useState(false);
   const [composeLead, setComposeLead] = useState<DbLead | null>(null);
 
   const reloadLeads = async () => {
@@ -474,36 +533,57 @@ export function MarketingPanel() {
     return leads.filter((l) => l.land === land);
   }, [leads, land]);
 
-  // Kategorien = Fachgebiet/Zielgruppe je Lead (z. B. "Zahnärzte", "Medizinrecht", "Orthopädie" …),
-  // innerhalb des aktuell gewählten Landes.
-  const categories = useMemo(() => {
+  // Orte = Städte innerhalb des gewählten Landes (z. B. "Bochum", "Dortmund" …).
+  const orte = useMemo(() => {
     const counts = new Map<string, number>();
     for (const l of leadsForLand) {
-      const key = (l.fachgebiet ?? "").trim() || OHNE_KATEGORIE;
+      const key = (l.stadt ?? "").trim() || OHNE_ORT;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [leadsForLand]);
 
+  const leadsForOrt = useMemo(() => {
+    if (ort === "alle") return leadsForLand;
+    return leadsForLand.filter((l) => ((l.stadt ?? "").trim() || OHNE_ORT) === ort);
+  }, [leadsForLand, ort]);
+
+  // Kategorien = Fachgebiet/Zielgruppe je Lead (z. B. "Zahnärzte", "Medizinrecht", "Orthopädie" …),
+  // innerhalb des aktuell gewählten Landes + Ortes.
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of leadsForOrt) {
+      const key = (l.fachgebiet ?? "").trim() || OHNE_KATEGORIE;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [leadsForOrt]);
+
   const displayedLeads = useMemo(() => {
-    if (kategorie === "alle") return leadsForLand;
-    return leadsForLand.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === kategorie);
-  }, [leadsForLand, kategorie]);
+    if (kategorie === "alle") return leadsForOrt;
+    return leadsForOrt.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === kategorie);
+  }, [leadsForOrt, kategorie]);
 
   // Bei "Alle" strukturiert nach Kategorie gruppieren, statt einer langen flachen Liste.
   const groupedLeads = useMemo(() => {
     if (kategorie !== "alle") return null;
     return categories.map(([name]) => [
       name,
-      leadsForLand.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === name),
+      leadsForOrt.filter((l) => ((l.fachgebiet ?? "").trim() || OHNE_KATEGORIE) === name),
     ] as [string, DbLead[]]);
-  }, [categories, leadsForLand, kategorie]);
+  }, [categories, leadsForOrt, kategorie]);
 
   useEffect(() => {
     if (land !== "alle" && !laender.some(([code]) => code === land)) {
       setLand("alle");
     }
   }, [laender, land]);
+
+  useEffect(() => {
+    if (ort !== "alle" && !orte.some(([name]) => name === ort)) {
+      setOrt("alle");
+    }
+  }, [orte, ort]);
 
   useEffect(() => {
     if (kategorie !== "alle" && !categories.some(([name]) => name === kategorie)) {
@@ -528,8 +608,9 @@ export function MarketingPanel() {
     const a = document.createElement("a");
     a.href = url;
     const landLabel = land === "alle" ? "alle-laender" : (LAND_LABEL[land as LandCode] ?? land);
+    const ortLabel = ort === "alle" ? "alle-orte" : ort;
     const katLabel = kategorie === "alle" ? "alle" : kategorie;
-    a.download = `marketingliste_${landLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${katLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `marketingliste_${landLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${ortLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${katLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -649,6 +730,34 @@ export function MarketingPanel() {
                 )
               )}
             </div>
+          </div>
+
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setNrwOpen((o) => !o)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              {nrwOpen ? "▾" : "▸"} NRW-Städte durchklicken ({NRW_STAEDTE.length})
+            </button>
+            {nrwOpen && (
+              <div className="mt-2 flex flex-wrap gap-1.5 max-h-40 overflow-auto p-2 rounded border bg-muted/20">
+                {NRW_STAEDTE.map((s) => (
+                  <button
+                    key={s.plz}
+                    type="button"
+                    onClick={() => setPlz(s.plz)}
+                    className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
+                      plz === s.plz ? "text-white" : "bg-background border hover:bg-muted"
+                    }`}
+                    style={plz === s.plz ? { backgroundColor: CRM_PURPLE } : undefined}
+                    title={s.plz}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {mode === "dsb" && (
@@ -824,6 +933,23 @@ export function MarketingPanel() {
           </div>
         )}
 
+        {orte.length > 1 && (
+          <div className="px-4 py-2 border-b flex items-center gap-2">
+            <Label className="text-xs shrink-0">Ort</Label>
+            <Select value={ort} onValueChange={setOrt}>
+              <SelectTrigger className="h-8 w-full max-w-xs text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="alle">Alle Orte · {leadsForLand.length}</SelectItem>
+                {orte.map(([name, count]) => (
+                  <SelectItem key={name} value={name}>{name} · {count}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {categories.length > 0 && (
           <div className="px-4 py-2 border-b flex flex-wrap gap-1.5">
             <button
@@ -833,7 +959,7 @@ export function MarketingPanel() {
               }`}
               style={kategorie === "alle" ? { backgroundColor: CRM_PURPLE } : undefined}
             >
-              Alle Fachrichtungen · {leadsForLand.length}
+              {mode === "dsb" ? "Alle Einrichtungstypen" : "Alle Fachrichtungen"} · {leadsForOrt.length}
             </button>
             {categories.map(([name, count]) => (
               <button
