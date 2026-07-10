@@ -113,36 +113,6 @@ export type Database = {
         }
         Relationships: []
       }
-      gmaps_tick_state: {
-        Row: {
-          id: number
-          last_run_at: string | null
-          last_summary: Json | null
-          plz_idx: number
-          source_idx: number
-          updated_at: string
-          zielgruppe_idx: number
-        }
-        Insert: {
-          id?: number
-          last_run_at?: string | null
-          last_summary?: Json | null
-          plz_idx?: number
-          source_idx?: number
-          updated_at?: string
-          zielgruppe_idx?: number
-        }
-        Update: {
-          id?: number
-          last_run_at?: string | null
-          last_summary?: Json | null
-          plz_idx?: number
-          source_idx?: number
-          updated_at?: string
-          zielgruppe_idx?: number
-        }
-        Relationships: []
-      }
       leads: {
         Row: {
           bounced_at: string | null
