@@ -101,14 +101,13 @@ async function runTick(): Promise<Response> {
     nextSourceIdx = (nextSourceIdx + 1) % 2;
   }
 
-  await supabaseAdmin.from("gmaps_tick_state").upsert({
+  await admin.from("gmaps_tick_state").upsert({
     id: 1,
     zielgruppe_idx: nextZielgruppeIdx,
     plz_idx: nextPlzIdx,
     source_idx: nextSourceIdx,
     last_run_at: new Date().toISOString(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    last_summary: { zielgruppe, plz, source, ...result } as any,
+    last_summary: { zielgruppe, plz, source, ...result },
   });
 
   return Response.json({ zielgruppe, plz, source, ...result });
