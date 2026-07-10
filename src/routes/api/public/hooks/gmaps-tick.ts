@@ -54,7 +54,9 @@ async function runTick(): Promise<Response> {
     "@/lib/sources.functions"
   );
 
-  const { data: stateRow } = await supabaseAdmin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = supabaseAdmin as any;
+  const { data: stateRow } = await admin
     .from("gmaps_tick_state")
     .select("zielgruppe_idx,plz_idx,source_idx")
     .eq("id", 1)
