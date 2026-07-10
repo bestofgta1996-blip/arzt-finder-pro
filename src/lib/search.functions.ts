@@ -21,7 +21,7 @@ const SearchInput = z.object({
   limitPerGroup: z.number().int().min(1).max(15).default(8),
   deepScrape: z.boolean().default(true),
   queryOffset: z.number().int().min(0).optional().default(0),
-  maxQueries: z.number().int().min(1).max(3).optional().default(2),
+  maxQueries: z.number().int().min(1).max(12).optional().default(2),
 });
 
 const DirectoryScanInput = z.object({
