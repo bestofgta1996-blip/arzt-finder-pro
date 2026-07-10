@@ -269,6 +269,7 @@ export type Database = {
       search_jobs: {
         Row: {
           aktiv: boolean
+          city_index: number
           erstellt_am: string
           fachgebiet: string
           gerichtsgutachter: boolean
@@ -278,11 +279,13 @@ export type Database = {
           last_run_at: string | null
           mode: string
           ort: string | null
+          query_offset: number
           updated_at: string
           zielgruppen: string[]
         }
         Insert: {
           aktiv?: boolean
+          city_index?: number
           erstellt_am?: string
           fachgebiet: string
           gerichtsgutachter?: boolean
@@ -292,11 +295,13 @@ export type Database = {
           last_run_at?: string | null
           mode?: string
           ort?: string | null
+          query_offset?: number
           updated_at?: string
           zielgruppen?: string[]
         }
         Update: {
           aktiv?: boolean
+          city_index?: number
           erstellt_am?: string
           fachgebiet?: string
           gerichtsgutachter?: boolean
@@ -306,6 +311,7 @@ export type Database = {
           last_run_at?: string | null
           mode?: string
           ort?: string | null
+          query_offset?: number
           updated_at?: string
           zielgruppen?: string[]
         }

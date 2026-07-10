@@ -1,0 +1,1 @@
+ALTER TABLE public.search_jobs ADD COLUMN IF NOT EXISTS query_offset integer NOT NULL DEFAULT 0; ALTER TABLE public.search_jobs ADD COLUMN IF NOT EXISTS city_index integer NOT NULL DEFAULT 0;
