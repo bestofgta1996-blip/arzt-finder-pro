@@ -83,6 +83,20 @@ async function runTick(): Promise<Response> {
   let totalNew = 0;
   const errors: string[] = [];
 
+  const CITIES_DE = [
+    "", "Berlin", "Hamburg", "München", "Köln", "Frankfurt", "Stuttgart",
+    "Düsseldorf", "Leipzig", "Dortmund", "Essen", "Bremen", "Dresden",
+    "Hannover", "Nürnberg", "Duisburg", "Bochum", "Wuppertal", "Bielefeld",
+    "Bonn", "Münster", "Mannheim", "Karlsruhe", "Augsburg", "Wiesbaden",
+    "Kiel", "Halle", "Magdeburg", "Freiburg", "Erfurt", "Rostock",
+  ];
+  const CITIES_PL = [
+    "", "Warszawa", "Kraków", "Łódź", "Wrocław", "Poznań", "Gdańsk",
+    "Szczecin", "Bydgoszcz", "Lublin", "Katowice", "Białystok", "Gdynia",
+    "Częstochowa", "Radom", "Toruń", "Rzeszów", "Kielce", "Olsztyn",
+  ];
+  const STEP = 3; // wie viele Query-Varianten pro Tick abgearbeitet werden
+
   for (const j of jobs ?? []) {
     const job = j as {
       id: string;
@@ -91,20 +105,27 @@ async function runTick(): Promise<Response> {
       ort: string | null;
       zielgruppen: string[];
       gerichtsgutachter: boolean;
+      query_offset?: number | null;
+      city_index?: number | null;
     };
     try {
       const land = (["DE", "PL"].includes(job.land) ? job.land : "DE") as "DE" | "PL";
+      const cities = land === "DE" ? CITIES_DE : CITIES_PL;
+      const cityIdx = ((job.city_index ?? 0) % cities.length + cities.length) % cities.length;
+      const ort = job.ort && job.ort.trim() ? job.ort : cities[cityIdx];
+      const offset = Math.max(0, job.query_offset ?? 0);
+
       const res = await searchDoctors({
         data: {
           fachgebiet: job.fachgebiet,
-          ort: job.ort ?? "",
+          ort: ort ?? "",
           land,
           zielgruppen: job.zielgruppen as never,
           gerichtsgutachter: job.gerichtsgutachter,
           limitPerGroup: 5,
           deepScrape: true,
-          queryOffset: 0,
-          maxQueries: 3,
+          queryOffset: offset,
+          maxQueries: STEP,
         },
       });
 
@@ -120,7 +141,7 @@ async function runTick(): Promise<Response> {
             email: email.toLowerCase(),
             telefon: hit.phones[0] ?? null,
             website: hit.url,
-            stadt: job.ort,
+            stadt: ort || job.ort,
             quelle_url: hit.url,
             quelle_typ: "cron-suche",
             gerichtsgutachter: job.gerichtsgutachter,
@@ -141,9 +162,24 @@ async function runTick(): Promise<Response> {
         totalNew += inserted?.length ?? 0;
       }
 
+      // Rotation: nächster Query-Block; wenn alle Varianten durch → nächste Stadt
+      const totalQueries = (res.queries ?? []).length || offset + STEP;
+      let nextOffset = offset + STEP;
+      let nextCityIdx = cityIdx;
+      if (nextOffset >= totalQueries) {
+        nextOffset = 0;
+        nextCityIdx = (cityIdx + 1) % cities.length;
+      }
+
       await supabaseAdmin
         .from("search_jobs")
-        .update({ last_run_at: new Date().toISOString(), last_hit_count: hitCount })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update({
+          last_run_at: new Date().toISOString(),
+          last_hit_count: hitCount,
+          query_offset: nextOffset,
+          city_index: nextCityIdx,
+        } as any)
         .eq("id", job.id);
     } catch (e) {
       errors.push(`${job.id}: ${e instanceof Error ? e.message : "unknown"}`);

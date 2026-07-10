@@ -21,7 +21,7 @@ const SearchInput = z.object({
   limitPerGroup: z.number().int().min(1).max(15).default(8),
   deepScrape: z.boolean().default(true),
   queryOffset: z.number().int().min(0).optional().default(0),
-  maxQueries: z.number().int().min(1).max(3).optional().default(2),
+  maxQueries: z.number().int().min(1).max(12).optional().default(2),
 });
 
 const DirectoryScanInput = z.object({
@@ -49,23 +49,115 @@ const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const PHONE_RE = /(\+?\d[\d\s().\-/]{6,}\d)/g;
 
 const TERMS_DE: Record<Zielgruppe, string[]> = {
-  gutachter: ["Medizinischer Sachverständiger", "Gerichtsgutachter Arzt", "Gutachter Praxis"],
-  fachaerzte: ["Facharzt Praxis", "Arztpraxis Kontakt Impressum"],
-  kliniken: ["Klinik Chefarzt Kontakt", "Krankenhaus Fachabteilung"],
-  versicherungen: ["Versicherung medizinische Begutachtung Ansprechpartner", "Berufsunfähigkeitsversicherung Gutachterstelle"],
-  anwaelte: ["Fachanwalt Medizinrecht Kanzlei Kontakt", "Rechtsanwalt Personenschaden"],
-  reha: ["Rehaklinik Kontakt Chefarzt", "Reha-Zentrum Ansprechpartner"],
-  berufsgenossenschaft: ["Berufsgenossenschaft Reha Gutachter Kontakt", "BG Klinik Ansprechpartner"],
+  gutachter: [
+    "Medizinischer Sachverständiger",
+    "Gerichtsgutachter Arzt",
+    "Gutachter Praxis",
+    "medizinisches Gutachten Kontakt",
+    "Sachverständiger Personenschaden",
+    "Gutachterstelle Arzt",
+    "unabhängiger medizinischer Gutachter",
+    "Facharzt Gutachten Impressum",
+  ],
+  fachaerzte: [
+    "Facharzt Praxis",
+    "Arztpraxis Kontakt Impressum",
+    "Facharztzentrum Kontakt",
+    "MVZ Facharzt Kontakt",
+    "Praxis Chefarzt Sprechstunde",
+    "Ärztehaus Kontakt Impressum",
+    "Privatpraxis Facharzt Kontakt",
+    "Facharztklinik Sekretariat Kontakt",
+  ],
+  kliniken: [
+    "Klinik Chefarzt Kontakt",
+    "Krankenhaus Fachabteilung",
+    "Klinikum Sekretariat Kontakt",
+    "Fachklinik Chefarzt Impressum",
+    "Universitätsklinik Ansprechpartner",
+    "Akutklinik Kontakt Sekretariat",
+    "Klinikverbund Chefarzt E-Mail",
+    "Belegklinik Kontakt Chefarzt",
+  ],
+  versicherungen: [
+    "Versicherung medizinische Begutachtung Ansprechpartner",
+    "Berufsunfähigkeitsversicherung Gutachterstelle",
+    "private Krankenversicherung Leistungsabteilung Kontakt",
+    "Unfallversicherung Gutachten Ansprechpartner",
+    "Rückversicherer Medizin Kontakt",
+    "Versicherer Leistungsprüfung medizinisch",
+  ],
+  anwaelte: [
+    "Fachanwalt Medizinrecht Kanzlei Kontakt",
+    "Rechtsanwalt Personenschaden",
+    "Kanzlei Arzthaftungsrecht Kontakt",
+    "Fachanwalt Sozialrecht Kontakt",
+    "Kanzlei Versicherungsrecht Personenschaden",
+    "Rechtsanwalt Arbeitsunfall Kontakt",
+  ],
+  reha: [
+    "Rehaklinik Kontakt Chefarzt",
+    "Reha-Zentrum Ansprechpartner",
+    "Rehabilitationsklinik Sekretariat",
+    "Anschlussheilbehandlung Klinik Kontakt",
+    "Reha-Fachklinik Chefarzt Impressum",
+    "ambulantes Reha-Zentrum Kontakt",
+  ],
+  berufsgenossenschaft: [
+    "Berufsgenossenschaft Reha Gutachter Kontakt",
+    "BG Klinik Ansprechpartner",
+    "BG Unfallklinik Kontakt Sekretariat",
+    "Berufsgenossenschaft Landesverband Kontakt",
+    "gesetzliche Unfallversicherung Ansprechpartner",
+    "DGUV Klinik Kontakt",
+  ],
 };
 
 const TERMS_PL: Record<Zielgruppe, string[]> = {
-  gutachter: ["biegły sądowy lekarz", "rzeczoznawca medyczny kontakt"],
-  fachaerzte: ["lekarz specjalista gabinet kontakt"],
-  kliniken: ["klinika ordynator kontakt", "szpital oddział kontakt"],
-  versicherungen: ["ubezpieczyciel orzecznictwo lekarskie kontakt"],
-  anwaelte: ["adwokat prawo medyczne kancelaria kontakt"],
-  reha: ["ośrodek rehabilitacji kontakt"],
-  berufsgenossenschaft: ["ZUS orzecznik kontakt"],
+  gutachter: [
+    "biegły sądowy lekarz",
+    "rzeczoznawca medyczny kontakt",
+    "biegły sądowy z zakresu medycyny kontakt",
+    "opinia medyczna biegły kontakt",
+    "orzecznik medyczny kontakt",
+    "biegły lekarz sądowy email",
+  ],
+  fachaerzte: [
+    "lekarz specjalista gabinet kontakt",
+    "poradnia specjalistyczna kontakt email",
+    "prywatny gabinet lekarski kontakt",
+    "centrum medyczne specjalista kontakt",
+    "lekarz specjalista email",
+  ],
+  kliniken: [
+    "klinika ordynator kontakt",
+    "szpital oddział kontakt",
+    "szpital kliniczny sekretariat kontakt",
+    "klinika prywatna kontakt email",
+    "centrum kliniczne ordynator kontakt",
+  ],
+  versicherungen: [
+    "ubezpieczyciel orzecznictwo lekarskie kontakt",
+    "towarzystwo ubezpieczeniowe lekarz orzecznik kontakt",
+    "PZU orzecznictwo lekarskie kontakt",
+  ],
+  anwaelte: [
+    "adwokat prawo medyczne kancelaria kontakt",
+    "radca prawny błąd medyczny kontakt",
+    "kancelaria odszkodowania medyczne kontakt",
+    "adwokat szkoda osobowa kontakt",
+  ],
+  reha: [
+    "ośrodek rehabilitacji kontakt",
+    "sanatorium kontakt email",
+    "klinika rehabilitacji kontakt",
+    "centrum rehabilitacji ordynator kontakt",
+  ],
+  berufsgenossenschaft: [
+    "ZUS orzecznik kontakt",
+    "KRUS orzecznik kontakt",
+    "orzecznictwo ZUS lekarz kontakt",
+  ],
 };
 
 function buildQueries(input: z.infer<typeof SearchInput>): { zg: Zielgruppe; q: string }[] {

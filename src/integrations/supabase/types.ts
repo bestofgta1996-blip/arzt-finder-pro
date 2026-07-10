@@ -113,36 +113,6 @@ export type Database = {
         }
         Relationships: []
       }
-      gmaps_tick_state: {
-        Row: {
-          id: number
-          last_run_at: string | null
-          last_summary: Json | null
-          plz_idx: number
-          source_idx: number
-          updated_at: string
-          zielgruppe_idx: number
-        }
-        Insert: {
-          id?: number
-          last_run_at?: string | null
-          last_summary?: Json | null
-          plz_idx?: number
-          source_idx?: number
-          updated_at?: string
-          zielgruppe_idx?: number
-        }
-        Update: {
-          id?: number
-          last_run_at?: string | null
-          last_summary?: Json | null
-          plz_idx?: number
-          source_idx?: number
-          updated_at?: string
-          zielgruppe_idx?: number
-        }
-        Relationships: []
-      }
       leads: {
         Row: {
           bounced_at: string | null
@@ -299,6 +269,7 @@ export type Database = {
       search_jobs: {
         Row: {
           aktiv: boolean
+          city_index: number
           erstellt_am: string
           fachgebiet: string
           gerichtsgutachter: boolean
@@ -308,11 +279,13 @@ export type Database = {
           last_run_at: string | null
           mode: string
           ort: string | null
+          query_offset: number
           updated_at: string
           zielgruppen: string[]
         }
         Insert: {
           aktiv?: boolean
+          city_index?: number
           erstellt_am?: string
           fachgebiet: string
           gerichtsgutachter?: boolean
@@ -322,11 +295,13 @@ export type Database = {
           last_run_at?: string | null
           mode?: string
           ort?: string | null
+          query_offset?: number
           updated_at?: string
           zielgruppen?: string[]
         }
         Update: {
           aktiv?: boolean
+          city_index?: number
           erstellt_am?: string
           fachgebiet?: string
           gerichtsgutachter?: boolean
@@ -336,6 +311,7 @@ export type Database = {
           last_run_at?: string | null
           mode?: string
           ort?: string | null
+          query_offset?: number
           updated_at?: string
           zielgruppen?: string[]
         }
